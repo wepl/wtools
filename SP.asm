@@ -4,11 +4,12 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: sp.asm 1.0 1998/11/22 13:43:15 jah Exp jah $
+;  :Version.	$Id: SP.asm 1.1 1999/01/17 14:20:06 jah Exp jah $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
 ;		17.01.99 recompile because error.i changed
+;		15.03.99 cop/k and width/k added
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1998 Bert Jahn, All Rights Reserved
 ;  :Language.	68020 Assembler
@@ -33,7 +34,9 @@ LOC	EQUR	A5		;a5 for local vars
 
 	STRUCTURE	ArgArray,0
 		ULONG	aa_output
+		ULONG	aa_cop
 		ULONG	aa_copstop
+		ULONG	aa_width
 		ULONG	aa_height
 		ULONG	aa_con0
 		ULONG	aa_mod1
@@ -132,6 +135,8 @@ VER	MACRO
 		NULONG	lm_bodysize
 		NULONG	lm_destptr
 		NSTRUCT	lm_colors,256*3
+		NWORD	lm_widthskip		;amount of bytes which are displayed
+						;but will not be written to dest
 		NALIGNLONG
 		NLABEL	lm_SIZEOF
 
@@ -221,6 +226,13 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		pea	(_cop_text)
 		bsr	_pf
 		add.w	#12,a7
+	;overwrite with arguments
+		move.l	(gl_rdarray+aa_cop,GL),d0
+		beq	.ncop
+		move.l	d0,a0
+		bsr	_etoi
+		move.l	d0,(cop1lc,a3)
+.ncop
 	;dump copper lists
 		bsr	_cdis
 	;move cop writes to custom table
@@ -241,6 +253,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		bmi	.4
 		add.w	#256,d5
 .4		sub.l	d0,d5			;D5 = height
+
 	;width
 	ifeq 1
 		bfextu	(diwstrt,a3){8:8},d0
@@ -257,6 +270,22 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		bpl	.lores
 		add.w	d4,d4
 .lores
+		move.l	(gl_rdarray+aa_height,GL),d0
+		beq	.h
+		move.l	d0,a0
+		bsr	_etoi
+		move.l	d0,d5
+.h
+		move.w	d4,(lm_widthskip,LOC)
+		move.l	(gl_rdarray+aa_width,GL),d0
+		beq	.w
+		move.l	d0,a0
+		bsr	_etoi
+		move.l	d0,d4
+.w		move.w	(lm_widthskip,LOC),d0
+		sub.w	d4,d0
+		asr.w	#3,d0
+		move.w	d0,(lm_widthskip,LOC)
 
 	;calc pic size
 	;FORM+ILBM
@@ -369,9 +398,11 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		moveq	#4-1,d2
 .6		move.l	(a0),a1
 		add.w	d0,a1
+		add.w	(lm_widthskip,LOC),a1
 		move.l	a1,(a0)+
 		move.l	(a0),a1
 		add.w	d1,a1
+		add.w	(lm_widthskip,LOC),a1
 		move.l	a1,(a0)+
 		dbf	d2,.6
 		
@@ -606,12 +637,6 @@ _copwrite	moveq	#-1,d5
 ;##########################################################################
 
 _withargs
-		move.l	(gl_rdarray+aa_height,GL),d0
-		beq	.h
-		move.l	d0,a0
-		bsr	_etoi
-		move.l	d0,d5
-.h
 		move.l	(gl_rdarray+aa_con0,GL),d0
 		beq	.0
 		move.l	d0,a0
@@ -687,9 +712,11 @@ _readargs	dc.b	"read arguments",0
 ;subsystems
 _dosname	dc.b	"dos.library",0
 
-_template	dc.b	"OUTPUTFILE/A"
-		dc.b	",cs=copstop/K"
-		dc.b	",height/K"
+_template	dc.b	"OutputFile/A"
+		dc.b	",Cop/K"
+		dc.b	",CS=CopStop/K"
+		dc.b	",Width/K"
+		dc.b	",Height/K"
 		dc.b	",con0/K"
 		dc.b	",mod1/K"
 		dc.b	",mod2/K"
