@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@whdload.org
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: sp.asm 1.4 2000/08/07 23:29:15 jah Exp $
+;  :Version.	$Id: SP.asm 1.5 2001/03/18 12:27:20 jah Exp jah $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -13,8 +13,10 @@
 ;		08.08.00 argument for CopStop will be validated now
 ;			 CopStop added to the copperlist dump
 ;		18.03.01 Ctrl-C for copdis added, better error handling
+;		31.03.01 support for ehb pictures added
+;			 noop added
 ;  :Requires.	OS V37+
-;  :Copyright.	© 1998-2000 Bert Jahn, All Rights Reserved
+;  :Copyright.	© 1998-2001 Bert Jahn, All Rights Reserved
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
 ;---------------------------------------------------------------------------*
@@ -70,7 +72,7 @@ LOC	EQUR	A5		;a5 for local vars
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.3 "
+		dc.b	"SP 1.4 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl"
@@ -157,6 +159,7 @@ VER	MACRO
 		NSTRUCT	lm_colors,256*3
 		NWORD	lm_widthskip		;amount of bytes which are displayed
 						;but will not be written to dest
+		NBYTE	lm_ehb			;extra half brite
 		NALIGNLONG
 		NLABEL	lm_SIZEOF
 
@@ -309,6 +312,16 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		asr.w	#3,d0
 		move.w	d0,(lm_widthskip,LOC)
 
+	;check ehb
+		move.w	(bplcon0,a3),d0
+		and.w	#%1111110001010000,d0
+		cmp.w	#%0110000000000000,d0	;HIRES=HAM=DPF=SHRES=0 depth=6
+		seq	(lm_ehb,LOC)
+		btst	#2,(bplcon2,a3)		;KILLEHB
+		beq	.noehb
+		sf	(lm_ehb,LOC)
+.noehb
+
 	;calc pic size
 	;FORM+ILBM
 		moveq	#12,d7
@@ -319,7 +332,10 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 	;CMAP
 		moveq	#1,d0
 		lsl.l	d6,d0
-		mulu	#3,d0
+		tst.b	(lm_ehb,LOC)
+		beq	.noehb2
+		moveq	#1<<5,d0
+.noehb2		mulu	#3,d0
 		move.l	d0,(lm_cmapsize,LOC)
 		add.l	d0,d7
 		addq.l	#8,d7
@@ -534,7 +550,7 @@ _cdis		moveq	#0,d4			;d4 = list number
 		bsr	_pf
 		addq.l	#8,a7
 		bsr	_pc
-		cmp.w	#fmode,d0
+		cmp.w	#noop,d0
 		bhi	.fail_adr
 		cmp.w	#copjmp1,d0
 		beq	.j1
