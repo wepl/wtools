@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: DIC.asm 0.19 2000/02/24 22:25:11 jah Exp jah $
+;  :Version.	$Id: DIC.asm 0.20 2000/07/22 18:12:00 jah Exp jah $
 ;  :History.	15.05.96
 ;		20.06.96 returncode supp.
 ;		01.06.97 _LVOWaitForChar added,  check for interactive terminal added
@@ -17,8 +17,9 @@
 ;		24.02.00 multiple tracks can be skipped now (taken from wwarp ;-)
 ;		21.07.00 bug: retry after diskchange fixed (Andreas Falkenhahn)
 ;		22.07.00 option 'Name' added (Andreas Falkenhahn)
+;		11.06.03 bug with device inhibit fixed (JOTD)
 ;  :Requires.	OS V37+
-;  :Copyright.	© 1996,1997,1998,1999,2000 Bert Jahn, All Rights Reserved
+;  :Copyright.	© 1996,1997,1998,1999,2000,2003 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V2.16
 ;  :To Do.
@@ -66,10 +67,16 @@ LOC	EQUR	A5		;a5 for local vars
 CPU	=	68000
 
 Version	 = 0
-Revision = 20
+Revision = 21
 
+	IFD BARFLY
 	PURE
 	OUTPUT	C:DIC
+	BOPT	O+				;enable optimizing
+	BOPT	OG+				;enable optimizing
+	BOPT	ODd-				;disable mul optimizing
+	BOPT	ODe-				;disable mul optimizing
+	ENDC
 
 	IFND	.passchk
 	DOSCMD	"WDate >T:date"
@@ -85,7 +92,7 @@ VER	MACRO
 		dc.b	0,"$VER: "
 		VER
 		dc.b	0
-		dc.b	"$Id: DIC.asm 0.19 2000/02/24 22:25:11 jah Exp jah $",10,0
+		dc.b	"$Id: DIC.asm 0.20 2000/07/22 18:12:00 jah Exp jah $",10,0
 	EVEN
 .start
 
@@ -104,7 +111,7 @@ VER	MACRO
 		move.l	#37,d0
 		lea	(_dosname),a1
 		move.l	(gl_execbase,GL),a6
-		jsr	_LVOOpenLibrary(a6)
+		jsr	(_LVOOpenLibrary,a6)
 		move.l	d0,(gl_dosbase,GL)
 		beq	.nodoslib
 
@@ -127,6 +134,18 @@ VER	MACRO
 		bsr	_PrintErrorDOS
 		bra	.noargs
 .argsok
+		move.l	(gl_rd_device,GL),a0
+		tst.b	(a0)
+		beq	.baddev
+.chkdev		move.b	(a0)+,d0
+		tst.b	(a0)
+		bne	.chkdev
+		cmp.b	#":",d0
+		beq	.devok
+.baddev		lea	(_baddevname),a0
+		bsr	_Print
+		bra	.badargs
+.devok
 		move.l	(gl_rd_size,GL),d0
 		beq	.01
 		move.l	d0,a0
@@ -166,10 +185,6 @@ VER	MACRO
 .noname
 
 	;parse tracks
-		lea	(gl_skip,GL),a0
-		move.w	#MAXTRACKS-1,d0
-.pt_clr		clr.b	(a0)+
-		dbf	d0,.pt_clr
 		move.l	(gl_rd_st,GL),a0
 		move.l	a0,d0
 		beq	.pt_end
@@ -285,6 +300,8 @@ _Main		move.l	(gl_rd_device,GL),d1
 		moveq	#-1,d2
 		move.l	(gl_dosbase,GL),a6
 		jsr	(_LVOInhibit,a6)
+		tst.l	d0
+		beq	.errinhibit
 
 		move.l	(gl_rd_fdisk,GL),d7	;d7 disknumber
 		subq.l	#1,d7
@@ -364,8 +381,13 @@ NAMEBUFLEN = 16
 		moveq	#0,d2
 		move.l	(gl_dosbase,GL),a6
 		jsr	(_LVOInhibit,a6)
+		tst.l	d0
+		beq	.errinhibit
 		
 		rts
+
+.errinhibit	lea	(_inhibit),a0
+		bra	_PrintErrorDOS
 
 ;##########################################################################
 ;----------------------------------------
@@ -390,11 +412,8 @@ _LoadDisk	movem.l	d2-d7/a6,-(a7)
 .c		move.b	(a0)+,(a1)+
 		dbeq	d0,.c
 		clr.b	-(a1)
-		move.b	-(a1),d0
-		cmp.b	#":",d0
-		bne	.1
-		clr.b	(a1)
-.1
+		clr.b	-(a1)				:remove ":"
+
 	;get geometry for device
 		lea	(ld_devname,LOC),a0
 		lea	(ld_di,LOC),a1
@@ -729,10 +748,12 @@ _noport		dc.b	"can't create MessagePort",0
 _noioreq	dc.b	"can't create IO-Request",0
 _nodev		dc.b	"device doesn't exist",0
 _baddev		dc.b	"cannot handle this device",0
+_baddevname	dc.b	"specified device must have trailing colon",10,0
 _badsize	dc.b	"illegal argument for SIZE/K",10,0
 
 ; Operationen
 _readargs	dc.b	"read arguments",0
+_inhibit	dc.b	"inhibit filesystem",0
 _getdiskmem	dc.b	"alloc mem for disk",0
 _readdisk	dc.b	"read disk",0
 _getdevinfo	dc.b	"get dev info",0
