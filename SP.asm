@@ -2,16 +2,16 @@
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@kagi.com
+;  :EMail.	wepl@whdload.org
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.1 1999/01/17 14:20:06 jah Exp jah $
+;  :Version.	$Id: SP.asm 1.2 1999/03/16 14:09:30 jah Exp jah $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
 ;		17.01.99 recompile because error.i changed
 ;		15.03.99 cop/k and width/k added
 ;  :Requires.	OS V37+
-;  :Copyright.	© 1998 Bert Jahn, All Rights Reserved
+;  :Copyright.	© 1998-2000 Bert Jahn, All Rights Reserved
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
 ;---------------------------------------------------------------------------*
