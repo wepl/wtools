@@ -2,9 +2,8 @@
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@whdload.org
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.8 2001/09/23 09:41:35 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.9 2002/01/27 23:17:27 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
