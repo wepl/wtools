@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@whdload.org
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.7 2001/09/19 15:45:29 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.8 2001/09/23 09:41:35 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -17,6 +17,7 @@
 ;			 noop added
 ;		29.09.01 NoCopLst/S added
 ;			 fmode=3 workaround added (Oxygene/Control titel picture)
+;		27.01.02 examines s:whdload.prefs for dump file path
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1998-2001 Bert Jahn, All Rights Reserved
 ;  :Language.	68020 Assembler
@@ -55,11 +56,14 @@ LOC	EQUR	A5		;a5 for local vars
 		ULONG	aa_nocoplst
 		LABEL	aa_SIZEOF
 
+MAXNAMELEN=256
+
 	NSTRUCTURE	Globals,0
 		NAPTR	gl_execbase
 		NAPTR	gl_dosbase
 		NAPTR	gl_rdargs
 		NSTRUCT	gl_rdarray,aa_SIZEOF
+		NSTRUCT	gl_name,MAXNAMELEN
 		NALIGNLONG
 		NLABEL	gl_SIZEOF
 
@@ -75,7 +79,7 @@ LOC	EQUR	A5		;a5 for local vars
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.5 "
+		dc.b	"SP 1.6 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl"
@@ -150,6 +154,78 @@ VER	MACRO
 
 ;##########################################################################
 
+_getname	movem.l	d2-d7,-(a7)
+		pea	_name
+
+	;load global configuration
+		lea	(_cfgname),a0
+		move.l	a0,d1
+		move.l	#MODE_OLDFILE,d2	;mode
+		move.l	(gl_dosbase,GL),a6	;A6 = dosbase
+		jsr	(_LVOOpen,a6)
+		move.l	d0,d6			;D6 = fh
+		beq	.g_end
+		move.l	#MAXNAMELEN,d5		;D5 = buffer size
+		sub.l	d5,a7			;A7 = buffer
+
+.g_next		move.l	d6,d1			;fh
+		move.l	a7,d2			;buffer
+		move.l	d5,d3			;buffer size
+		bsr	_FGetS
+		tst.l	d0
+		beq	.g_free
+	;remove comments
+		move.l	a7,a0
+		move.l	a7,a1
+.g_sn		move.b	(a0)+,d0
+		cmp.b	#";",d0
+		bne	.g_sw
+		moveq	#0,d0
+.g_sw		move.b	d0,(a1)+
+		bne	.g_sn
+	;remove space and tabs at end of line
+		subq.l	#1,a1
+.g_sl		subq.l	#1,a1
+		cmp.l	a1,a7
+		bhi	.g_sc
+		cmp.b	#" ",(a1)
+		beq	.g_sk
+		cmp.b	#"	",(a1)
+		bne	.g_sc
+.g_sk		clr.b	(a1)
+		bra	.g_sl
+.g_sc
+	;check for contens
+		tst.b	(a7)			;empty line
+		beq	.g_next
+
+		lea	_cfgid,a0
+		move.l	a7,a1			;actual global cfg line
+		bsr	_StrNCaseCmp
+		tst.l	d0
+		bne	.g_next
+		
+		lea	(13,a7),a0
+		lea	(gl_name,GL),a1
+		move.l	a1,(a7,d5.l)
+.cpy		move.b	(a0)+,(a1)+
+		bne	.cpy
+
+		lea	_name,a0
+		lea	(gl_name,GL),a1
+		move.l	#MAXNAMELEN,d0
+		bsr	_AppendString
+
+.g_free		add.l	d5,a7			;free buffer
+		move.l	d6,d1
+		jsr	(_LVOClose,a6)
+.g_end						;end global config
+		move.l	(a7)+,a0
+		movem.l	(a7)+,_MOVEMREGS
+		rts
+
+;##########################################################################
+
 	NSTRUCTURE	local_main,0
 		NAPTR	lm_fileptr
 		NULONG	lm_filesize
@@ -175,7 +251,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		clr.l	(a0)+
 		dbf	d0,.clr4
 
-		lea	(_name),a0
+		bsr	_getname
 		bsr	_LoadFileMsg
 		move.l	d1,(lm_filesize,LOC)
 		move.l	d0,(lm_fileptr,LOC)
@@ -775,6 +851,7 @@ _withargs
 		PrintArgs
 		Print
 		CheckBreak
+		FGetS
 	INCLUDE	error.i
 		PrintErrorDOS
 	INCLUDE	files.i
@@ -784,9 +861,13 @@ _withargs
 		GetCustomName
 	INCLUDE	strings.i
 		etoi
+		StrNCaseCmp
+		AppendString
 
 ;##########################################################################
 
+_cfgname	dc.b	"s:whdload.prefs",0
+_cfgid		dc.b	"coredumppath=",0
 _name		dc.b	".whdl_dump",0
 
 _mem_text	dc.b	"BaseMemSize=$%lx",10,0
