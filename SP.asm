@@ -4,10 +4,11 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: whdl_decrunch.s 0.971 1998/04/08 15:38:02 jah Exp $
+;  :Version.	$Id: sp.asm 1.0 1998/11/22 13:43:15 jah Exp jah $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
+;		17.01.99 recompile because error.i changed
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1998 Bert Jahn, All Rights Reserved
 ;  :Language.	68020 Assembler
@@ -59,7 +60,7 @@ LOC	EQUR	A5		;a5 for local vars
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.0 "
+		dc.b	"SP 1.1 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl"
