@@ -4,8 +4,9 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	jah@pub.th-zwickau.de
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :History.	V 1.0 27-Feb-95
-;		V 1.1 07.01.96 format changed (INT -> DOS)
+;  :History.	1.0 27-Feb-95
+;		1.1 07.01.96 format changed (INT -> DOS)
+;               1.2 05.05.99 format changed, time removed
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V1.117
@@ -30,7 +31,7 @@
 
 	PURE				;set pure-bit
 		bra	.start
-		dc.b	"$VER: WDate 1.1 "
+		dc.b	"$VER: WDate 1.2 "
 	DOSCMD	"WDate >T:date"
 	INCBIN	"T:date"
 		dc.b	" by Bert Jahn"
@@ -51,7 +52,7 @@
 		jsr	(_LVODateStamp,a6)
 
 		lea	(gl_datetime,a5),a0
-		move.b	#FORMAT_DOS,(dat_Format,a0)
+		move.b	#FORMAT_CDN,(dat_Format,a0)
 		clr.b	(dat_Flags,a0)
 		clr.l	(dat_StrDay,a0)
 		lea	(gl_strdate,a5),a1
@@ -62,6 +63,16 @@
 		jsr	(_LVODateToStr,a6)
 		tst.l	d0
 		beq	.closedos
+		
+		lea	(gl_strdate,a5),a0
+		move.b	#".",(2,a0)
+		move.b	#".",(5,a0)
+		move.w	(6,a0),(8,a0)
+		move.w	#"19",(6,a0)
+		cmp.b	#"7",(8,a0)
+		bhs	.1
+		move.w	#"20",(6,a0)
+.1		clr.b	(10,a0)
 
 		lea	(_outstr),a0
 		move.l	a0,d1
@@ -80,7 +91,7 @@
 
 ;####################################################################
 
-_outstr		dc.b	"(%s%s)",0
+_outstr		dc.b	"(%s)",0
 _dosname	dc.b	"dos.library",0
 
 ;####################################################################
