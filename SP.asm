@@ -4,12 +4,14 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@whdload.org
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.2 1999/03/16 14:09:30 jah Exp jah $
+;  :Version.	$Id: SP.asm 1.3 2000/01/23 12:25:17 jah Exp jah $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
 ;		17.01.99 recompile because error.i changed
 ;		15.03.99 cop/k and width/k added
+;		08.08.00 argument for CopStop will be validated now
+;			 CopStop added to the copperlist dump
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1998-2000 Bert Jahn, All Rights Reserved
 ;  :Language.	68020 Assembler
@@ -109,6 +111,19 @@ VER	MACRO
 		bsr	_PrintErrorDOS
 		bra	.noargs
 .argsok
+		move.l	(gl_rdarray+aa_copstop,GL),d0
+		beq	.copstop
+		move.l	d0,a0
+		bsr	_etoi
+		move.l	d0,(gl_rdarray+aa_copstop,GL)
+		ble	.copstoperr
+		tst.b	(a0)
+		beq	.copstop
+.copstoperr	lea	(_badcopstop),a0
+		bsr	_Print
+		bra	.opend
+.copstop
+
 		bsr	_Main
 .opend
 		move.l	(gl_rdargs,GL),d1
@@ -531,13 +546,21 @@ _cdis		moveq	#0,d4
 ;print address
 _pa		movem.l	d0-d1/a0-a1,-(a7)
 		sub.l	(lm_mem,LOC),a0
-		move.l	a0,-(a7)
+		cmp.l	(gl_rdarray+aa_copstop,GL),a0
+		bne	.s
+		lea	.cs,a0
+		bsr	_Print
+		movem.l	(a7),_MOVEMREGS
+		sub.l	(lm_mem,LOC),a0
+.s		move.l	a0,-(a7)
 		pea	.1
 		bsr	_pf
 		addq.l	#8,a7
 		movem.l	(a7)+,_MOVEMREGS
 		rts
 .1		dc.b	"$%06lx ",0
+.cs		dc.b	"*** copstop ***",10,0
+	EVEN
 
 ;print string
 _p		movem.l	d0-d1/a0-a1,-(a7)
@@ -576,8 +599,6 @@ _pc		movem.l	d0-d1/a0-a1,-(a7)
 _copwrite	moveq	#-1,d5
 		move.l	(gl_rdarray+aa_copstop,GL),d0
 		beq	.cse
-		move.l	d0,a0
-		bsr	_etoi
 		move.l	d0,d5
 		add.l	(lm_mem,LOC),d5
 .cse
@@ -705,6 +726,7 @@ _dim_text	dc.b	"width=%ld height=%ld depth=%ld",10,0
 
 ; Errors
 _nomem		dc.b	"not enough free store",0
+_badcopstop	dc.b	"invalid argument for CopStop",10,0
 
 ; Operationen
 _readargs	dc.b	"read arguments",0
