@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@whdload.org
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.6 2001/03/31 11:33:52 jah Exp $
+;  :Version.	$Id: SP.asm 1.7 2001/09/19 15:45:29 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -75,7 +75,7 @@ LOC	EQUR	A5		;a5 for local vars
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.4 "
+		dc.b	"SP 1.5 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl"
