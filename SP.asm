@@ -3,7 +3,7 @@
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.10 2002/02/19 22:16:46 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.11 2002/03/22 16:41:20 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -79,10 +79,10 @@ MAXNAMELEN=256
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.6 "
+		dc.b	"SP 1.7 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
-		dc.b	" by Wepl"
+		dc.b	" by Wepl,Psygore"
 	ENDM
 
 		bra	.start
@@ -363,10 +363,9 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 .4		sub.l	d0,d5			;D5 = height
 
 	;check lace
-		move.w	(bplcon0,a3),d0
-		and.w	#%100,d0
+		btst	#2,(bplcon0+1,a3)
+		sne	(lm_lace,LOC)
 		beq	.nolace
-		sf	(lm_lace,LOC)
 		add.l	d5,d5			;height*2
 .nolace
 	;width
@@ -519,7 +518,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.w	d6,d1			;depth
 .8		move.l	(a0),a1
 		tst.b	(lm_lace,LOC)
-		bne	.nolace2
+		beq	.nolace2
 		sub.w	(bpl1mod,a3),a1
 .nolace2
 		add.l	(lm_mem,LOC),a1
@@ -539,14 +538,14 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		moveq	#4-1,d2
 .6		move.l	(a0),a1
 		tst.b	(lm_lace,LOC)
-		beq	.lace3
+		bne	.lace3
 		add.w	d0,a1
 .lace3
 		add.w	(lm_widthskip,LOC),a1
 		move.l	a1,(a0)+
 		move.l	(a0),a1
 		tst.b	(lm_lace,LOC)
-		beq	.lace4
+		bne	.lace4
 		add.w	d1,a1
 .lace4
 		add.w	(lm_widthskip,LOC),a1
