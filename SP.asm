@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@whdload.org
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.3 2000/01/23 12:25:17 jah Exp jah $
+;  :Version.	$Id: sp.asm 1.4 2000/08/07 23:29:15 jah Exp $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -12,6 +12,7 @@
 ;		15.03.99 cop/k and width/k added
 ;		08.08.00 argument for CopStop will be validated now
 ;			 CopStop added to the copperlist dump
+;		18.03.01 Ctrl-C for copdis added, better error handling
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1998-2000 Bert Jahn, All Rights Reserved
 ;  :Language.	68020 Assembler
@@ -62,10 +63,14 @@ LOC	EQUR	A5		;a5 for local vars
 	PURE
 	OUTPUT	C:SP
 	SECTION	"",CODE
+	BOPT	O+				;enable optimizing
+	BOPT	OG+				;enable optimizing
+	BOPT	ODd-				;disable mul optimizing
+	BOPT	ODe-				;disable mul optimizing
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.1 "
+		dc.b	"SP 1.3 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl"
@@ -250,6 +255,8 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 .ncop
 	;dump copper lists
 		bsr	_cdis
+		tst.l	d0
+		beq	.cdis_fail
 	;move cop writes to custom table
 		bsr	_copwrite
 
@@ -434,6 +441,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.l	(gl_execbase,GL),a6
 		jsr	(_LVOFreeVec,a6)
 .adestfree
+.cdis_fail
 .filefree
 		move.l	(lm_fileptr,LOC),a1
 		move.l	(gl_execbase,GL),a6
@@ -445,7 +453,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 
 ;##########################################################################
 
-_cdis		moveq	#0,d4
+_cdis		moveq	#0,d4			;d4 = list number
 		move.l	(cop1lc,a3),d5		;d5 = lc1
 		move.l	(cop2lc,a3),d6		;d6 = lc2
 
@@ -458,7 +466,31 @@ _cdis		moveq	#0,d4
 		bsr	_pf
 		add.l	#8,a7
 
-.next		bsr	_pa
+.next
+	;check Ctrl-C
+		move.l	a0,-(a7)
+		bsr	_CheckBreak
+		move.l	(a7)+,a0
+		tst.l	d0
+		bne	.fail
+		
+	;check memory bounds
+		move.l	(lm_mem,LOC),d0
+		cmp.l	a0,d0
+		bhi	.fail_mem
+		move.l	(lm_header,LOC),a1
+		add.l	(wdh_BaseMemSize,a1),d0
+		subq.l	#4,d0
+		cmp.l	a0,d0
+		blo	.fail_mem
+
+	;check copstop
+		move.l	a0,d0
+		sub.l	(lm_mem,LOC),d0
+		cmp.l	(gl_rdarray+aa_copstop,GL),d0
+		beq	.copstop
+
+		bsr	_pa			;print address
 		cmp.l	#-2,(a0)
 		beq	.e
 		movem.w	(a0)+,d0-d1
@@ -467,6 +499,7 @@ _cdis		moveq	#0,d4
 		btst	#0,d1
 		beq	.w
 
+	;skip
 .s		lsr.w	#1,d0
 		ext.l	d0
 		ror.l	#7,d0
@@ -478,6 +511,7 @@ _cdis		moveq	#0,d4
 		addq.l	#8,a7
 		bra	.next
 
+	;wait
 .w		lsr.w	#1,d0
 		ext.l	d0
 		ror.l	#7,d0
@@ -489,6 +523,7 @@ _cdis		moveq	#0,d4
 		addq.l	#8,a7
 		bra	.next
 
+	;move
 .m		addq.w	#2,d0
 		cmp.w	(a0),d0
 		beq	.lm
@@ -500,7 +535,7 @@ _cdis		moveq	#0,d4
 		addq.l	#8,a7
 		bsr	_pc
 		cmp.w	#fmode,d0
-		bhi	.fail
+		bhi	.fail_adr
 		cmp.w	#copjmp1,d0
 		beq	.j1
 		cmp.w	#copjmp2,d0
@@ -508,6 +543,7 @@ _cdis		moveq	#0,d4
 		move.l	d6,a0
 		bra	.nlc
 
+	;move long
 .lm		subq.w	#2,d0
 		addq.l	#2,a0
 		move.w	d0,d2
@@ -532,34 +568,39 @@ _cdis		moveq	#0,d4
 
 .q		moveq	#-1,d0
 		rts
+.copstop	lea	(.cs),a0
+		bsr	_Print
+		bra	.q
 
 .fail		moveq	#0,d0
 		rts
+.fail_mem	lea	(.mem),a0
+		bsr	_Print
+		bra	.fail
+.fail_adr	lea	(.adr),a0
+		bsr	_Print
+		bra	.fail
 
 .cend		dc.b	"CEND",10,0
 .cmove		dc.b	"CMOVE	#$%04x,$%04x	",0
 .clmove		dc.b	"CLMOVE	#$%08lx,$%04x",0
 .cwait		dc.b	"CWAIT	%d,%d",10,0
 .cskip		dc.b	"CSKIP	%d,%d",10,0
+.mem		dc.b	"copperlist outside BaseMem!",10,0
+.adr		dc.b	"invalid CMOVE destination!",10,0
+.cs		dc.b	"*** copstop ***",10,0
 	EVEN
 
 ;print address
 _pa		movem.l	d0-d1/a0-a1,-(a7)
 		sub.l	(lm_mem,LOC),a0
-		cmp.l	(gl_rdarray+aa_copstop,GL),a0
-		bne	.s
-		lea	.cs,a0
-		bsr	_Print
-		movem.l	(a7),_MOVEMREGS
-		sub.l	(lm_mem,LOC),a0
-.s		move.l	a0,-(a7)
+		move.l	a0,-(a7)
 		pea	.1
 		bsr	_pf
 		addq.l	#8,a7
 		movem.l	(a7)+,_MOVEMREGS
 		rts
 .1		dc.b	"$%06lx ",0
-.cs		dc.b	"*** copstop ***",10,0
 	EVEN
 
 ;print string
@@ -704,6 +745,7 @@ _withargs
 	INCLUDE	dosio.i
 		PrintArgs
 		Print
+		CheckBreak
 	INCLUDE	error.i
 		PrintErrorDOS
 	INCLUDE	files.i
