@@ -3,7 +3,7 @@
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.9 2002/01/27 23:17:27 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.10 2002/02/19 22:16:46 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -17,8 +17,9 @@
 ;		29.09.01 NoCopLst/S added
 ;			 fmode=3 workaround added (Oxygene/Control titel picture)
 ;		27.01.02 examines s:whdload.prefs for dump file path
+;		14.03.02 support for lace pictures (Psygore)
 ;  :Requires.	OS V37+
-;  :Copyright.	© 1998-2001 Bert Jahn, All Rights Reserved
+;  :Copyright.	© 1998-2002 Bert Jahn/Philippe Muhlheim, All Rights Reserved
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
 ;---------------------------------------------------------------------------*
@@ -238,6 +239,7 @@ _getname	movem.l	d2-d7,-(a7)
 		NWORD	lm_widthskip		;amount of bytes which are displayed
 						;but will not be written to dest
 		NBYTE	lm_ehb			;extra half brite
+		NBYTE	lm_lace			;lace
 		NALIGNLONG
 		NLABEL	lm_SIZEOF
 
@@ -360,6 +362,13 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		add.w	#256,d5
 .4		sub.l	d0,d5			;D5 = height
 
+	;check lace
+		move.w	(bplcon0,a3),d0
+		and.w	#%100,d0
+		beq	.nolace
+		sf	(lm_lace,LOC)
+		add.l	d5,d5			;height*2
+.nolace
 	;width
 	ifeq 1
 		bfextu	(diwstrt,a3){8:8},d0
@@ -503,10 +512,16 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		moveq	#0,d3			;d3 = plane
 
 		move.w	d5,d3			;height
+		lsr.w	#1,d3
+		bcs	.odd
 
 .9		lea	(bplpt,a3),a0
 		move.w	d6,d1			;depth
 .8		move.l	(a0),a1
+		tst.b	(lm_lace,LOC)
+		bne	.nolace2
+		sub.w	(bpl1mod,a3),a1
+.nolace2
 		add.l	(lm_mem,LOC),a1
 		move.w	d4,d0			;width
 		add.w	#15,d0
@@ -523,6 +538,40 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		lea	(bplpt,a3),a0
 		moveq	#4-1,d2
 .6		move.l	(a0),a1
+		tst.b	(lm_lace,LOC)
+		beq	.lace3
+		add.w	d0,a1
+.lace3
+		add.w	(lm_widthskip,LOC),a1
+		move.l	a1,(a0)+
+		move.l	(a0),a1
+		tst.b	(lm_lace,LOC)
+		beq	.lace4
+		add.w	d1,a1
+.lace4
+		add.w	(lm_widthskip,LOC),a1
+		move.l	a1,(a0)+
+		dbf	d2,.6
+.odd
+		lea	(bplpt,a3),a0
+		move.w	d6,d1			;depth
+.8a		move.l	(a0),a1
+		add.l	(lm_mem,LOC),a1
+		move.w	d4,d0			;width
+		add.w	#15,d0
+		lsr.w	#4,d0
+.7a		move.w	(a1)+,(a2)+
+		subq.w	#1,d0
+		bne	.7a
+		sub.l	(lm_mem,LOC),a1
+		move.l	a1,(a0)+
+		subq.w	#1,d1
+		bne	.8a
+		
+		movem.w	(bpl1mod,a3),d0-d1
+		lea	(bplpt,a3),a0
+		moveq	#4-1,d2
+.6a		move.l	(a0),a1
 		add.w	d0,a1
 		add.w	(lm_widthskip,LOC),a1
 		move.l	a1,(a0)+
@@ -530,11 +579,13 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		add.w	d1,a1
 		add.w	(lm_widthskip,LOC),a1
 		move.l	a1,(a0)+
-		dbf	d2,.6
+		dbf	d2,.6a
 		
+		tst.w	d3
+		beq	.end
 		subq.w	#1,d3
 		bne	.9
-
+.end
 		move.l	d7,d0
 		move.l	(lm_destptr,LOC),a0
 		move.l	(gl_rdarray+aa_output,GL),d1
