@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: DIC.asm 0.20 2000/07/22 18:12:00 jah Exp jah $
+;  :Version.	$Id: DIC.asm 0.21 2003/06/14 20:17:42 wepl Exp wepl $
 ;  :History.	15.05.96
 ;		20.06.96 returncode supp.
 ;		01.06.97 _LVOWaitForChar added,  check for interactive terminal added
@@ -18,8 +18,11 @@
 ;		21.07.00 bug: retry after diskchange fixed (Andreas Falkenhahn)
 ;		22.07.00 option 'Name' added (Andreas Falkenhahn)
 ;		11.06.03 bug with device inhibit fixed (JOTD)
+;		16.07.04 using utility.library for mulu32
+;			 dont (allow) skip on fatal read errors
+;			 no longer eats own error messages
 ;  :Requires.	OS V37+
-;  :Copyright.	©†1996,1997,1998,1999,2000,2003 Bert Jahn, All Rights Reserved
+;  :Copyright.	© 1996,1997,1998,1999,2000,2003 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V2.16
 ;  :To Do.
@@ -34,9 +37,9 @@
 	INCLUDE	lvo/dos.i
 	INCLUDE	dos/dos.i
 	INCLUDE	devices/trackdisk.i
+	INCLUDE	lvo/utility.i
 
 	INCLUDE	macros/ntypes.i
-	INCLUDE	macros/mulu32.i
 
 ;++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -45,6 +48,7 @@ MAXTRACKS	= 160
 	STRUCTURE	Globals,0
 		APTR	gl_execbase
 		APTR	gl_dosbase
+		APTR	gl_utilbase
 		ULONG	gl_stdin
 		APTR	gl_rdargs
 		LABEL	gl_rdarray
@@ -57,6 +61,7 @@ MAXTRACKS	= 160
 		ULONG	gl_rd_pedantic
 		ULONG	gl_rc
 		STRUCT	gl_skip,MAXTRACKS
+		UBYTE	gl_interactive
 		ALIGNLONG
 		LABEL	gl_SIZEOF
 
@@ -64,10 +69,9 @@ MAXTRACKS	= 160
 
 GL	EQUR	A4		;a4 ptr to Globals
 LOC	EQUR	A5		;a5 for local vars
-CPU	=	68000
 
-Version	 = 0
-Revision = 21
+Version	 = 1
+Revision = 0
 
 	IFD BARFLY
 	PURE
@@ -92,7 +96,7 @@ VER	MACRO
 		dc.b	0,"$VER: "
 		VER
 		dc.b	0
-		dc.b	"$Id: DIC.asm 0.20 2000/07/22 18:12:00 jah Exp jah $",10,0
+		dc.b	"$Id: DIC.asm 0.21 2003/06/14 20:17:42 wepl Exp wepl $",10,0
 	EVEN
 .start
 
@@ -114,6 +118,13 @@ VER	MACRO
 		jsr	(_LVOOpenLibrary,a6)
 		move.l	d0,(gl_dosbase,GL)
 		beq	.nodoslib
+
+		move.l	#37,d0
+		lea	(_utilname),a1
+		move.l	(gl_execbase,GL),a6
+		jsr	(_LVOOpenLibrary,a6)
+		move.l	d0,(gl_utilbase,GL)
+		beq	.noutillib
 
 		lea	(_ver),a0
 		bsr	_Print
@@ -255,6 +266,10 @@ VER	MACRO
 		move.l	(gl_dosbase,GL),a6
 		jsr	(_LVOFreeArgs,a6)
 .noargs
+		move.l	(gl_utilbase,GL),a1
+		move.l	(gl_execbase,GL),a6
+		jsr	(_LVOCloseLibrary,a6)
+.noutillib
 		move.l	(gl_dosbase,GL),a1
 		move.l	(gl_execbase,GL),a6
 		jsr	(_LVOCloseLibrary,a6)
@@ -314,6 +329,7 @@ _Main		move.l	(gl_rd_device,GL),d1
 		move.l	(gl_dosbase,GL),a6
 		jsr	(_LVOIsInteractive,a6)
 		tst.l	d0
+		sne	(gl_interactive,GL)
 		beq	.readdisk
 
 	;prompt user to insert disk
@@ -430,37 +446,31 @@ _LoadDisk	movem.l	d2-d7/a6,-(a7)
 		bsr	_PrintArgs
 		add.w	#12,a7
 		
-		move.l	(ld_di+devi_LowCyl,LOC),d2
-	IFEQ CPU-68020
-		mulu.l	(ld_di+devi_Surfaces,LOC),d2
-	ELSE
-		move.l	(ld_di+devi_Surfaces,LOC),d0
-		mulu32	d0,d2					;D2 = first track
-	ENDC
+		move.l	(ld_di+devi_LowCyl,LOC),d0
+		move.l	(ld_di+devi_Surfaces,LOC),d1
+		move.l	(gl_utilbase,GL),a6
+		jsr	(_LVOUMult32,a6)
+		move.l	d0,d2				;D2 = first track
 
-		move.l	(ld_di+devi_HighCyl,LOC),d3
-		sub.l	(ld_di+devi_LowCyl,LOC),d3
-		addq.l	#1,d3
-	IFEQ CPU-68020
-		mulu.l	(ld_di+devi_Surfaces,LOC),d3
-	ELSE
-		move.l	(ld_di+devi_Surfaces,LOC),d0
-		mulu32	d0,d3					;D3 = amount of tracks
-	ENDC
+		move.l	(ld_di+devi_HighCyl,LOC),d0
+		sub.l	(ld_di+devi_LowCyl,LOC),d0
+		addq.l	#1,d0
+		move.l	(ld_di+devi_Surfaces,LOC),d1
+		jsr	(_LVOUMult32,a6)
+		move.l	d0,d3				;D3 = amount of tracks
 
-	IFEQ CPU-68020
-		move.l	(ld_di+devi_SizeBlock,LOC),d4
-		mulu.l	(ld_di+devi_BlocksPerTrack,LOC),d4
-	ELSE
-		move.l	(ld_di+devi_SizeBlock,LOC),d4
-		move.l	(ld_di+devi_BlocksPerTrack,LOC),d0
-		mulu32	d0,d4					;D4 = tracksize
-	ENDC
+		move.l	(ld_di+devi_SizeBlock,LOC),d0
+		move.l	(ld_di+devi_BlocksPerTrack,LOC),d1
+		jsr	(_LVOUMult32,a6)
+		move.l	d0,d4				;D4 = tracksize
+
+		move.l	d3,d0
+		move.l	d4,d1
+		jsr	(_LVOUMult32,a6)
+		move.l	d0,d6				;D6 = disksize
 
 	;print geometry
 		lea	(_m_diskgeo),a0
-		move.l	d3,d6
-		mulu32	d4,d6			;disksize = cyls * heads * blktrk * blksize
 		move.l	d6,-(a7)
 		move.l	(ld_di+devi_HighCyl,LOC),-(a7)
 		move.l	(ld_di+devi_LowCyl,LOC),-(a7)
@@ -534,6 +544,7 @@ _LoadDisk	movem.l	d2-d7/a6,-(a7)
 		NAPTR	lrd_buffer
 		NAPTR	lrd_msgport
 		NBYTE	lrd_skipall
+		NBYTE	lrd_fatal
 		NALIGNLONG
 		LABEL	lrd_SIZEOF
 
@@ -590,7 +601,7 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 
 		add.l	d2,d3				;D3 = last track
 
-		bsr	_PrintLn
+.retry		bsr	_PrintLn
 .loop		lea	(_diskprogress),a0		;output progress
 		move.l	d3,-(a7)
 		sub.l	d2,(a7)
@@ -614,7 +625,9 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		move.w	#ETD_READ,(IO_COMMAND,a2)
 		move.l	d4,(IO_LENGTH,a2)		;bytes per track
 		move.l	d2,d0
-		mulu32	d4,d0
+		move.l	d4,d1
+		move.l	(gl_utilbase,GL),a0
+		jsr	(_LVOUMult32,a0)
 		move.l	d0,(IO_OFFSET,a2)		;begin at disk (offset)
 		add.l	(lrd_buffer,LOC),d0
 		move.l	d0,(IO_DATA,a2)			;dest buf
@@ -626,6 +639,19 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		lea	(_readdisk),a0
 		bsr	_PrintErrorTD
 		
+		tst.l	(gl_rd_pedantic,GL)
+		bne	.break
+
+	;check if error is fatal
+		sf	(lrd_fatal,LOC)
+		cmp.b	#TDERR_NotSpecified,(IO_ERROR,a2)	;device error?
+		blo	.fatal
+		cmp.b	#TDERR_DiskChanged,(IO_ERROR,a2)
+		blo	.notfatal
+.fatal		st	(lrd_fatal,LOC)
+.notfatal
+
+	;set new changenum for retry if disk changed
 		cmp.b	#TDERR_DiskChanged,(IO_ERROR,a2)
 		bne	.notchg
 		move.l	a2,a1				;ioreq
@@ -633,23 +659,41 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		jsr	(_LVODoIO,a6)
 		move.l	(IO_ACTUAL,a2),(IOTD_COUNT,a2)
 .notchg
-		tst.l	(gl_rd_pedantic,GL)
-		bne	.break
-		
-		tst.b	(lrd_skipall,LOC)
-		bne	.skip
 
-		move.l	(gl_stdin,GL),d1
-		move.l	(gl_dosbase,GL),a6
-		jsr	(_LVOIsInteractive,a6)
-		tst.l	d0
-		beq	.skip
+	;how to continue
+		move.b	(gl_interactive,GL),d0
+		add.b	d0,d0
+		add.b	(lrd_fatal,LOC),d0
+		beq	.skip				;nonfatal noninteractive
+		addq.b	#1,d0
+		beq	.break				;fatal noninteractive
+		addq.b	#1,d0
+		beq	.asklong			;nonfatal interactive
 
-		lea	(_tryagain),a0
+.askshort	lea	(_tryshort),a0
 		bsr	_Print
 		bsr	_FlushOutput
 		
-.wait		bsr	_GetKey
+.waitshort	bsr	_GetKey
+		cmp.b	#3,d0				;Ctrl-C
+		beq	.break
+		UPPER	d0
+		cmp.b	#"R",d0
+		beq	.waitend
+		cmp.b	#"Q",d0
+		beq	.waitend
+		cmp.b	#13,d0				;Return
+		bne	.waitshort
+		bra	.waitend
+
+.asklong	tst.b	(lrd_skipall,LOC)
+		bne	.skip
+
+		lea	(_trylong),a0
+		bsr	_Print
+		bsr	_FlushOutput
+		
+.waitlong	bsr	_GetKey
 		cmp.b	#3,d0				;Ctrl-C
 		beq	.break
 		UPPER	d0
@@ -662,32 +706,34 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		cmp.b	#"Q",d0
 		beq	.waitend
 		cmp.b	#13,d0				;Return
-		bne	.wait
+		bne	.waitlong
 		
-.waitend	lsl.w	#8,d0
-		or.w	#10,d0
-		clr.w	-(a7)
-		move.w	d0,-(a7)
+.waitend	cmp.b	#13,d0				;Return
+		bne	.no13
+		moveq	#"Q",d0
+.no13		lsl.w	#8,d0
+		move.b	#10,d0
+		swap	d0
+		move.l	d0,-(a7)
 		move.l	a7,a0
 		bsr	_Print
 		move.l	(a7)+,d0
 		rol.l	#8,d0
 		cmp.b	#"R",d0
-		beq	.loop
+		beq	.retry
 		cmp.b	#"S",d0
 		beq	.skip
 		cmp.b	#"Q",d0
 		beq	.break
-		cmp.b	#13,d0				;Return
-		beq	.break
-
 	;skip all errors
 		st	(lrd_skipall,LOC)
 
 .skip
 	;fill track data area with pattern "TDIC"
 		move.l	d2,d0
-		mulu32	d4,d0
+		move.l	d4,d1
+		move.l	(gl_utilbase,GL),a0
+		jsr	(_LVOUMult32,a0)
 		add.l	(lrd_buffer,LOC),d0
 		move.l	d0,a0
 		move.l	d4,d0
@@ -695,6 +741,7 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 .fill		move.l	#"TDIC",(a0)+
 		subq.l	#1,d0
 		bne	.fill
+		bsr	_PrintLn
 		
 	;next track
 .readok		addq.l	#1,d2
@@ -730,7 +777,8 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 
 _defdev		dc.b	"DF0:",0
 _insdisk	dc.b	10,"Insert disk %ld into drive %s and press RETURN (^C to cancel) ...",0
-_tryagain	dc.b	"Retry/Skip/skip All/Quit (r/s/a/Q): ",0
+_trylong	dc.b	"Retry/Skip/skip All/Quit (r/s/a/Q): ",0
+_tryshort	dc.b	"Retry/Quit (r/Q): ",0
 _filefmt	dc.b	"Disk.%ld",0
 _txt_badtracks	dc.b	"Invalid SKIPTRACK/K specification",10,0
 
@@ -761,6 +809,7 @@ _opendevice	dc.b	"open device",0
 
 ;subsystems
 _dosname	DOSNAME
+_utilname	dc.b	"utility.library",0
 
 _template	dc.b	"DEVICE"		;name of device (default "DF0:)
 		dc.b	",NAME"			;name of image, implies FD=1 and LD=1
