@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: DIC.asm 0.18 2000/01/16 16:22:07 jah Exp jah $
+;  :Version.	$Id: DIC.asm 0.19 2000/02/24 22:25:11 jah Exp jah $
 ;  :History.	15.05.96
 ;		20.06.96 returncode supp.
 ;		01.06.97 _LVOWaitForChar added,  check for interactive terminal added
@@ -15,10 +15,12 @@
 ;		11.01.00 pedantic mode and skipping tracks added
 ;			 error handling changed
 ;		24.02.00 multiple tracks can be skipped now (taken from wwarp ;-)
+;		21.07.00 bug: retry after diskchange fixed (Andreas Falkenhahn)
+;		22.07.00 option 'Name' added (Andreas Falkenhahn)
 ;  :Requires.	OS V37+
 ;  :Copyright.	©†1996,1997,1998,1999,2000 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
-;  :Translator.	Barfly V2.9
+;  :Translator.	Barfly V2.16
 ;  :To Do.
 ;---------------------------------------------------------------------------*
 ;##########################################################################
@@ -46,6 +48,7 @@ MAXTRACKS	= 160
 		APTR	gl_rdargs
 		LABEL	gl_rdarray
 		ULONG	gl_rd_device
+		ULONG	gl_rd_name
 		ULONG	gl_rd_st
 		ULONG	gl_rd_size
 		ULONG	gl_rd_fdisk
@@ -63,7 +66,7 @@ LOC	EQUR	A5		;a5 for local vars
 CPU	=	68000
 
 Version	 = 0
-Revision = 19
+Revision = 20
 
 	PURE
 	OUTPUT	C:DIC
@@ -82,7 +85,7 @@ VER	MACRO
 		dc.b	0,"$VER: "
 		VER
 		dc.b	0
-		dc.b	"$Id: DIC.asm 0.18 2000/01/16 16:22:07 jah Exp jah $",10,0
+		dc.b	"$Id: DIC.asm 0.19 2000/02/24 22:25:11 jah Exp jah $",10,0
 	EVEN
 .start
 
@@ -154,6 +157,13 @@ VER	MACRO
 		move.l	d0,a0
 		move.l	(a0),d1
 .2		move.l	d1,(gl_rd_ldisk,GL)
+
+		tst.l	(gl_rd_name,GL)
+		beq	.noname
+		moveq	#1,d0
+		move.l	d0,(gl_rd_fdisk,GL)
+		move.l	d0,(gl_rd_ldisk,GL)
+.noname
 
 	;parse tracks
 		lea	(gl_skip,GL),a0
@@ -326,7 +336,10 @@ NAMEBUFLEN = 16
 		move.l	a7,a2			;buffer
 		moveq	#NAMEBUFLEN,d0		;bufsize
 		bsr	_FormatString
-		move.l	d4,d0			;size
+		move.l	(gl_rd_name,GL),d0
+		beq	.noname
+		move.l	d0,a2
+.noname		move.l	d4,d0			;size
 		tst.l	(gl_rd_size,GL)
 		beq	.s
 		cmp.l	(gl_rd_size,GL),d0
@@ -556,14 +569,6 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		jsr	(_LVODoIO,a6)
 		move.l	(IO_ACTUAL,a2),(IOTD_COUNT,a2)
 
-	;setup the ioreq
-		move.l	(lrd_buffer,LOC),(IO_DATA,a2)	;dest buf
-		move.l	d2,d0
-		mulu32	d4,d0
-		move.l	d0,(IO_OFFSET,a2)		;begin at disk (offset)
-		move.l	d4,(IO_LENGTH,a2)		;bytes per track
-		move.w	#ETD_READ,(IO_COMMAND,a2)
-		
 		add.l	d2,d3				;D3 = last track
 
 		bsr	_PrintLn
@@ -586,15 +591,29 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		bne	.skip
 
 	;read the track
-		move.l	a2,a1				;read one track
 		clr.b	(IO_ERROR,a2)
+		move.w	#ETD_READ,(IO_COMMAND,a2)
+		move.l	d4,(IO_LENGTH,a2)		;bytes per track
+		move.l	d2,d0
+		mulu32	d4,d0
+		move.l	d0,(IO_OFFSET,a2)		;begin at disk (offset)
+		add.l	(lrd_buffer,LOC),d0
+		move.l	d0,(IO_DATA,a2)			;dest buf
+		move.l	a2,a1
 		move.l	(gl_execbase,GL),a6
 		jsr	(_LVODoIO,a6)
 		move.b	(IO_ERROR,a2),d0
 		beq	.readok
 		lea	(_readdisk),a0
 		bsr	_PrintErrorTD
-
+		
+		cmp.b	#TDERR_DiskChanged,(IO_ERROR,a2)
+		bne	.notchg
+		move.l	a2,a1				;ioreq
+		move.w	#TD_CHANGENUM,(IO_COMMAND,a1)
+		jsr	(_LVODoIO,a6)
+		move.l	(IO_ACTUAL,a2),(IOTD_COUNT,a2)
+.notchg
 		tst.l	(gl_rd_pedantic,GL)
 		bne	.break
 		
@@ -648,17 +667,18 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 
 .skip
 	;fill track data area with pattern "TDIC"
-		move.l	(IO_DATA,a2),a0
-		move.l	(IO_LENGTH,a2),d0
+		move.l	d2,d0
+		mulu32	d4,d0
+		add.l	(lrd_buffer,LOC),d0
+		move.l	d0,a0
+		move.l	d4,d0
 		lsr.l	#2,d0
 .fill		move.l	#"TDIC",(a0)+
 		subq.l	#1,d0
 		bne	.fill
 		
 	;next track
-.readok		add.l	d4,(IO_OFFSET,a2)		;begin at disk (offset)
-		add.l	d4,(IO_DATA,a2)			;dest buf
-		addq.l	#1,d2
+.readok		addq.l	#1,d2
 		cmp.l	d2,d3
 		bne	.loop
 
@@ -722,6 +742,7 @@ _opendevice	dc.b	"open device",0
 _dosname	DOSNAME
 
 _template	dc.b	"DEVICE"		;name of device (default "DF0:)
+		dc.b	",NAME"			;name of image, implies FD=1 and LD=1
 		dc.b	",SKIPTRACK/K"		;dont read these tracks
 		dc.b	",SIZE/K"		;number of bytes
 		dc.b	",FD=FIRSTDISK/K/N"	;number of first disk
