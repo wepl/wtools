@@ -8,6 +8,7 @@
 ;		0.2	13.01.96 anpassung auf macros
 ;		0.3	02.03.96 cf2 support added
 ;		0.4	20.05.96 chaoseng added / buf with extcols removed
+;		0.5	17.02.04 Pinball Wizard ("Unit") added
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -50,7 +51,7 @@ LOC	EQUR	A5		;a5 for local vars
 
 
 VER	MACRO
-		dc.b	"bin2pic 0.4 "
+		dc.b	"bin2pic 0.5 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Bert Jahn"
@@ -275,6 +276,15 @@ _picfmts
 		dc.w	0		;offset pic
 		dc.w	0		;offset cols
 
+_picfmtdummy	dc.l	0		;next
+		dc.l	0		;size
+		dc.w	0		;flags
+		dc.w	0		;depth
+		dc.w	0		;witdh
+		dc.w	0		;height
+		dc.w	0		;offset pic
+		dc.w	0		;offset cols
+
 ;##########################################################################
 
 	NSTRUCTURE	local_main,0
@@ -296,6 +306,25 @@ _Main		movem.l	d2/a2/a6,-(a7)
 		move.l	d1,(lm_srcsize,LOC)
 		move.l	d0,(lm_srcptr,LOC)
 		beq	.end
+
+	;special formats with id
+		move.l	(lm_srcptr,LOC),a0
+		lea	(_picfmtdummy),a2
+		cmp.l	#"Unit",(a0)
+		bne	.not_unit
+		addq.l	#4,a0
+		move.w	(a0)+,(pf_depth,a2)
+		move.w	(a0)+,(pf_width,a2)
+		move.w	(a0)+,(pf_height,a2)
+		move.w	(a0)+,d0		;color entries count
+		sub.l	(lm_srcptr,LOC),a0
+		move.w	a0,(pf_offsetcols,a2)
+		lsl.w	#1,d0
+		add.w	d0,a0
+		move.w	a0,(pf_offsetpic,a2)
+		move.w	#PFFF_OWNCOLS,(pf_flags,a2)
+		bra	.found
+.not_unit
 
 	;search slave
 		lea	(_picfmts),a2		;A2 = slave
