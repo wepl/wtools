@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@whdload.org
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.5 2001/03/18 12:27:20 jah Exp jah $
+;  :Version.	$Id: SP.asm 1.6 2001/03/31 11:33:52 jah Exp $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -15,6 +15,8 @@
 ;		18.03.01 Ctrl-C for copdis added, better error handling
 ;		31.03.01 support for ehb pictures added
 ;			 noop added
+;		29.09.01 NoCopLst/S added
+;			 fmode=3 workaround added (Oxygene/Control titel picture)
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1998-2001 Bert Jahn, All Rights Reserved
 ;  :Language.	68020 Assembler
@@ -50,6 +52,7 @@ LOC	EQUR	A5		;a5 for local vars
 		ULONG	aa_pt2
 		ULONG	aa_pt3
 		ULONG	aa_pt4
+		ULONG	aa_nocoplst
 		LABEL	aa_SIZEOF
 
 	NSTRUCTURE	Globals,0
@@ -257,9 +260,12 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.l	d0,(cop1lc,a3)
 .ncop
 	;dump copper lists
+		tst.l	(gl_rdarray+aa_nocoplst,GL)
+		bne	.nocoplst
 		bsr	_cdis
 		tst.l	d0
 		beq	.cdis_fail
+.nocoplst
 	;move cop writes to custom table
 		bsr	_copwrite
 
@@ -288,8 +294,15 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 	else
 		move.w	(ddfstop,a3),d4
 		sub.w	(ddfstrt,a3),d4
+		bfextu	(fmode,a3){14:2},d0
+		cmp.w	#3,d0
+		bne	.ddf1
+		mulu	#3,d4
 		addq.w	#8,d4
+		bra	.ddf2
+.ddf1		addq.w	#8,d4
 		add.w	d4,d4			;D4 = width
+.ddf2
 	endc
 		tst.b	(bplcon0,a3)
 		bpl	.lores
@@ -804,6 +817,7 @@ _template	dc.b	"OutputFile/A"
 		dc.b	",pt2/K"
 		dc.b	",pt3/K"
 		dc.b	",pt4/K"
+		dc.b	",NoCopLst/S"
 		dc.b	0
 
 _ver		VER
