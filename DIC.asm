@@ -4,7 +4,7 @@
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: DIC.asm 0.17 1999/01/17 14:17:38 jah Exp jah $
+;  :Version.	$Id: DIC.asm 0.18 2000/01/16 16:22:07 jah Exp jah $
 ;  :History.	15.05.96
 ;		20.06.96 returncode supp.
 ;		01.06.97 _LVOWaitForChar added,  check for interactive terminal added
@@ -14,6 +14,7 @@
 ;		17.01.99 recompile because error.i changed
 ;		11.01.00 pedantic mode and skipping tracks added
 ;			 error handling changed
+;		24.02.00 multiple tracks can be skipped now (taken from wwarp ;-)
 ;  :Requires.	OS V37+
 ;  :Copyright.	©†1996,1997,1998,1999,2000 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -36,6 +37,8 @@
 
 ;++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+MAXTRACKS	= 160
+
 	STRUCTURE	Globals,0
 		APTR	gl_execbase
 		APTR	gl_dosbase
@@ -49,6 +52,7 @@
 		ULONG	gl_rd_ldisk
 		ULONG	gl_rd_pedantic
 		ULONG	gl_rc
+		STRUCT	gl_skip,MAXTRACKS
 		ALIGNLONG
 		LABEL	gl_SIZEOF
 
@@ -59,7 +63,7 @@ LOC	EQUR	A5		;a5 for local vars
 CPU	=	68000
 
 Version	 = 0
-Revision = 18
+Revision = 19
 
 	PURE
 	OUTPUT	C:DIC
@@ -78,7 +82,7 @@ VER	MACRO
 		dc.b	0,"$VER: "
 		VER
 		dc.b	0
-		dc.b	"$Id$",10,0
+		dc.b	"$Id: DIC.asm 0.18 2000/01/16 16:22:07 jah Exp jah $",10,0
 	EVEN
 .start
 
@@ -151,6 +155,70 @@ VER	MACRO
 		move.l	(a0),d1
 .2		move.l	d1,(gl_rd_ldisk,GL)
 
+	;parse tracks
+		lea	(gl_skip,GL),a0
+		move.w	#MAXTRACKS-1,d0
+.pt_clr		clr.b	(a0)+
+		dbf	d0,.pt_clr
+		move.l	(gl_rd_st,GL),a0
+		move.l	a0,d0
+		beq	.pt_end
+
+.pt_loop	bsr	.pt_getnum
+		move.b	(a0)+,d1
+		beq	.pt_single
+		cmp.b	#",",d1
+		beq	.pt_single
+		cmp.b	#"-",d1
+		beq	.pt_area
+		cmp.b	#"*",d1
+		beq	.pt_step
+		bra	.pt_err
+
+.pt_single	st	(gl_skip,GL,d0.w)
+.pt_check	tst.b	d1
+		beq	.pt_end
+		cmp.b	#",",d1
+		beq	.pt_loop
+		bra	.pt_err
+		
+.pt_step	move.l	d0,d2			;D2 = start
+		move.l	#MAXTRACKS-1,d3		;D3 = last
+.pt_step0	bsr	.pt_getnum		;D0 = skip
+		tst.l	d0
+		ble	.pt_err
+.pt_step1	cmp.l	d2,d3
+		blo	.pt_err
+.pt_step_l	st	(gl_skip,GL,d2.w)
+		add.l	d0,d2
+		cmp.l	d2,d3
+		bhs	.pt_step_l
+		move.b	(a0)+,d1
+		bra	.pt_check
+
+.pt_area	move.l	d0,d2			;D2 = start
+		bsr	.pt_getnum
+		move.l	d0,d3			;D3 = last
+		moveq	#1,d0			;D0 = skip
+		cmp.b	#"*",(a0)
+		bne	.pt_step1
+		addq.l	#1,a0
+		bra	.pt_step0
+
+.pt_getnum	move.l	(a7)+,a1
+		move.l	a0,a3
+		bsr	_atoi
+		cmp.l	a0,a3
+		beq	.pt_err
+		cmp.l	#MAXTRACKS,d0
+		bhs	.pt_err
+		jmp	(a1)
+
+.pt_err		lea	(_txt_badtracks),a0
+		bsr	_Print
+		bra	.badargs
+
+.pt_end
 		move.l	(gl_dosbase,GL),a6
 		jsr	(_LVOInput,a6)
 		move.l	d0,(gl_stdin,GL)
@@ -514,12 +582,9 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		bne	.break
 		
 	;check if track should be skipped
-		move.l	(gl_rd_st,GL),d0
-		beq	.nost
-		move.l	d0,a0
-		cmp.l	(a0),d2
-		beq	.skip
-.nost
+		tst.b	(gl_skip,GL,d2.w)
+		bne	.skip
+
 	;read the track
 		move.l	a2,a1				;read one track
 		clr.b	(IO_ERROR,a2)
@@ -590,8 +655,6 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		subq.l	#1,d0
 		bne	.fill
 		
-		bsr	_PrintLn
-
 	;next track
 .readok		add.l	d4,(IO_OFFSET,a2)		;begin at disk (offset)
 		add.l	d4,(IO_DATA,a2)			;dest buf
@@ -630,6 +693,7 @@ _defdev		dc.b	"DF0:",0
 _insdisk	dc.b	10,"Insert disk %ld into drive %s and press RETURN (^C to cancel) ...",0
 _tryagain	dc.b	"Retry/Skip/skip All/Quit (r/s/a/Q): ",0
 _filefmt	dc.b	"Disk.%ld",0
+_txt_badtracks	dc.b	"Invalid SKIPTRACK/K specification",10,0
 
 ;Messages
 _m_readdisk	dc.b	"read from ",155,"1m%s",155,"22m: (%s %ld)",10,0
@@ -658,7 +722,7 @@ _opendevice	dc.b	"open device",0
 _dosname	DOSNAME
 
 _template	dc.b	"DEVICE"		;name of device (default "DF0:)
-		dc.b	",SKIPTRACK/K/N"	;dont read these tracks
+		dc.b	",SKIPTRACK/K"		;dont read these tracks
 		dc.b	",SIZE/K"		;number of bytes
 		dc.b	",FD=FIRSTDISK/K/N"	;number of first disk
 		dc.b	",LD=LASTDISK/K/N"	;number of last disk
