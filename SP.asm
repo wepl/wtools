@@ -3,7 +3,7 @@
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.11 2002/03/22 16:41:20 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.12 2002/03/26 19:55:59 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -18,6 +18,8 @@
 ;			 fmode=3 workaround added (Oxygene/Control titel picture)
 ;		27.01.02 examines s:whdload.prefs for dump file path
 ;		14.03.02 support for lace pictures (Psygore)
+;		22.02.08 more infos on diwstrt/stop for copper disassembler
+;			 output values on cwait exchanged
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1998-2002 Bert Jahn/Philippe Muhlheim, All Rights Reserved
 ;  :Language.	68020 Assembler
@@ -671,6 +673,7 @@ _cdis		moveq	#0,d4			;d4 = list number
 		ror.l	#7,d0
 		lsl.w	#7,d0
 		lsr.l	#7,d0
+		swap	d0
 		move.l	d0,-(a7)
 		pea	.cwait
 		bsr	_pf
@@ -678,11 +681,15 @@ _cdis		moveq	#0,d4			;d4 = list number
 		bra	.next
 
 	;move
-.m		addq.w	#2,d0
+.m		cmp.w	#diwstrt,d0
+		beq	.mw
+		cmp.w	#diwstop,d0
+		beq	.mw
+		addq.w	#2,d0
 		cmp.w	(a0),d0
 		beq	.lm
 		subq.w	#2,d0
-		move.w	d0,-(a7)
+.mw		move.w	d0,-(a7)
 		move.w	d1,-(a7)
 		pea	.cmove
 		bsr	_pf
@@ -714,6 +721,7 @@ _cdis		moveq	#0,d4			;d4 = list number
 		bsr	_pf
 		add.w	#12,a7
 		move.w	d2,d0
+		move.w	(-6,a0),d1
 		bsr	_pc
 		bra	.next
 
@@ -738,7 +746,7 @@ _cdis		moveq	#0,d4			;d4 = list number
 .cend		dc.b	"CEND",10,0
 .cmove		dc.b	"CMOVE	#$%04x,$%04x	",0
 .clmove		dc.b	"CLMOVE	#$%08lx,$%04x",0
-.cwait		dc.b	"CWAIT	%d,%d",10,0
+.cwait		dc.b	"CWAIT	%d,%d			;v,h",10,0
 .cskip		dc.b	"CSKIP	%d,%d",10,0
 .mem		dc.b	"copperlist outside BaseMem!",10,0
 .adr		dc.b	"invalid CMOVE destination!",10,0
@@ -775,18 +783,46 @@ _pf		movem.l	d0-d1/a0-a1,-(a7)
 ;print custom
 _pc		movem.l	d0-d1/a0-a1,-(a7)
 		bsr	_GetCustomName
+		tst.l	d0
+		beq	.end
 		move.l	d0,-(a7)
 		pea	.2
-		bne	.1
-		addq.l	#4,a7
-		pea	.3
-.1		bsr	_pf
+		bsr	_pf
 		addq.l	#8,a7
+		cmp.w	#diwstrt,(2,a7)
+		bne	.nodiwstrt
+		moveq	#0,d0
+		move.w	(6,a7),d0
+		ror.l	#8,d0
+		lsl.w	#8,d0
+		lsr.l	#8,d0
+.diw		swap	d0
+		move.l	d0,-(a7)
+		pea	.diwstrt
+		bsr	_pf
+		addq.l	#8,a7
+		bra	.end
+.nodiwstrt	cmp.w	#diwstop,(2,a7)
+		bne	.nodiwstop
+		moveq	#0,d0
+		move.w	(6,a7),d0
+		ror.l	#8,d0
+		lsl.w	#8,d0
+		lsr.l	#8,d0
+		or.l	#256<<16,d0	;set h8
+		btst	#7,d0
+		bne	.diw
+		or.w	#256,d0		;set v8
+		bra	.diw
+.nodiwstop
+.end		pea	.3
+		bsr	_p
 		movem.l	(a7)+,_MOVEMREGS
 		rts
 
-.2		dc.b	"	;%s"
+.2		dc.b	"	;%s",0
 .3		dc.b	10,0
+.diwstrt	dc.b	" v=%d h=%d",0
 	EVEN
 
 ;##########################################################################
