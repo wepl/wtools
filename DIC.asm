@@ -2,9 +2,8 @@
 ;  :Program.	DIC.asm
 ;  :Contents.	Disk-Image-Creator
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@kagi.com
-;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: DIC.asm 0.21 2003/06/14 20:17:42 wepl Exp wepl $
+;  :EMail.	wepl@whdload.de
+;  :Version.	$Id: DIC.asm 0.22 2004/07/16 09:53:34 wepl Exp wepl $
 ;  :History.	15.05.96
 ;		20.06.96 returncode supp.
 ;		01.06.97 _LVOWaitForChar added,  check for interactive terminal added
@@ -21,6 +20,9 @@
 ;		16.07.04 using utility.library for mulu32
 ;			 dont (allow) skip on fatal read errors
 ;			 no longer eats own error messages
+;		08.05.08 skiptrack fixed for disks containing more than MAXTRACKS tracks
+;			 (previously higher tracks has been randomly skipped because
+;			 internal table was too short)
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1996,1997,1998,1999,2000,2003 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -71,7 +73,7 @@ GL	EQUR	A4		;a4 ptr to Globals
 LOC	EQUR	A5		;a5 for local vars
 
 Version	 = 1
-Revision = 0
+Revision = 1
 
 	IFD BARFLY
 	PURE
@@ -96,7 +98,7 @@ VER	MACRO
 		dc.b	0,"$VER: "
 		VER
 		dc.b	0
-		dc.b	"$Id: DIC.asm 0.21 2003/06/14 20:17:42 wepl Exp wepl $",10,0
+		dc.b	"$Id: DIC.asm 0.22 2004/07/16 09:53:34 wepl Exp wepl $",10,0
 	EVEN
 .start
 
@@ -617,8 +619,11 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		bne	.break
 		
 	;check if track should be skipped
+		cmp.l	#MAXTRACKS,d2
+		bhs	.noskip
 		tst.b	(gl_skip,GL,d2.w)
 		bne	.skip
+.noskip
 
 	;read the track
 		clr.b	(IO_ERROR,a2)
