@@ -3,7 +3,7 @@
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn
 ;  :Address.	Franz-Liszt-Straﬂe 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.12 2002/03/26 19:55:59 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.13 2008/02/22 13:24:41 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -20,6 +20,9 @@
 ;		14.03.02 support for lace pictures (Psygore)
 ;		22.02.08 more infos on diwstrt/stop for copper disassembler
 ;			 output values on cwait exchanged
+;		13.05.08 extra infos for bplcon0 added
+;			 dumps multiple copper lists if lc1 will be changed
+;			 better lace support
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1998-2002 Bert Jahn/Philippe Muhlheim, All Rights Reserved
 ;  :Language.	68020 Assembler
@@ -238,10 +241,12 @@ _getname	movem.l	d2-d7,-(a7)
 		NULONG	lm_bodysize
 		NULONG	lm_destptr
 		NSTRUCT	lm_colors,256*3
+		NSTRUCT	lm_custlace,512*2	;second custom area
 		NWORD	lm_widthskip		;amount of bytes which are displayed
 						;but will not be written to dest
 		NBYTE	lm_ehb			;extra half brite
 		NBYTE	lm_lace			;lace
+		NBYTE	lm_custlacetrue		;bool if second custom area is inited
 		NALIGNLONG
 		NLABEL	lm_SIZEOF
 
@@ -263,6 +268,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		clr.l	(lm_mem,LOC)
 		clr.l	(lm_cust,LOC)
 		clr.l	(lm_header,LOC)
+		clr.b	(lm_custlacetrue,LOC)
 
 		cmp.l	#20,d1
 		blt	.filefree
@@ -369,6 +375,11 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		sne	(lm_lace,LOC)
 		beq	.nolace
 		add.l	d5,d5			;height*2
+		tst.b	(lm_custlacetrue,LOC)
+		bne	.nolace
+		lea	_custlace_missing,a0
+		bsr	_Print
+		beq	.custlace_missing
 .nolace
 	;width
 	ifeq 1
@@ -512,17 +523,18 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.l	(lm_bodysize,LOC),(a2)+
 		moveq	#0,d3			;d3 = plane
 
+		lea	(lm_custlace,LOC),a6
+		tst.b	(lm_lace,LOC)
+		beq	.nolace3
+		btst	#7,(vposr,a3)		;short or long frame?
+		bne	.nolace3
+		exg.l	a3,a6
+.nolace3
 		move.w	d5,d3			;height
-		lsr.w	#1,d3
-		bcs	.odd
 
 .9		lea	(bplpt,a3),a0
 		move.w	d6,d1			;depth
 .8		move.l	(a0),a1
-		tst.b	(lm_lace,LOC)
-		beq	.nolace2
-		sub.w	(bpl1mod,a3),a1
-.nolace2
 		add.l	(lm_mem,LOC),a1
 		move.w	d4,d0			;width
 		add.w	#15,d0
@@ -539,51 +551,19 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		lea	(bplpt,a3),a0
 		moveq	#4-1,d2
 .6		move.l	(a0),a1
-		tst.b	(lm_lace,LOC)
-		bne	.lace3
 		add.w	d0,a1
-.lace3
 		add.w	(lm_widthskip,LOC),a1
 		move.l	a1,(a0)+
 		move.l	(a0),a1
-		tst.b	(lm_lace,LOC)
-		bne	.lace4
 		add.w	d1,a1
-.lace4
 		add.w	(lm_widthskip,LOC),a1
 		move.l	a1,(a0)+
 		dbf	d2,.6
-.odd
-		lea	(bplpt,a3),a0
-		move.w	d6,d1			;depth
-.8a		move.l	(a0),a1
-		add.l	(lm_mem,LOC),a1
-		move.w	d4,d0			;width
-		add.w	#15,d0
-		lsr.w	#4,d0
-.7a		move.w	(a1)+,(a2)+
-		subq.w	#1,d0
-		bne	.7a
-		sub.l	(lm_mem,LOC),a1
-		move.l	a1,(a0)+
-		subq.w	#1,d1
-		bne	.8a
-		
-		movem.w	(bpl1mod,a3),d0-d1
-		lea	(bplpt,a3),a0
-		moveq	#4-1,d2
-.6a		move.l	(a0),a1
-		add.w	d0,a1
-		add.w	(lm_widthskip,LOC),a1
-		move.l	a1,(a0)+
-		move.l	(a0),a1
-		add.w	d1,a1
-		add.w	(lm_widthskip,LOC),a1
-		move.l	a1,(a0)+
-		dbf	d2,.6a
-		
-		tst.w	d3
-		beq	.end
+
+		tst.b	(lm_lace,LOC)
+		beq	.nolace2
+		exg.l	a3,a6
+.nolace2
 		subq.w	#1,d3
 		bne	.9
 .end
@@ -597,6 +577,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.l	(gl_execbase,GL),a6
 		jsr	(_LVOFreeVec,a6)
 .adestfree
+.custlace_missing
 .cdis_fail
 .filefree
 		move.l	(lm_fileptr,LOC),a1
@@ -685,6 +666,8 @@ _cdis		moveq	#0,d4			;d4 = list number
 		beq	.mw
 		cmp.w	#diwstop,d0
 		beq	.mw
+		cmp.w	#bplcon0,d0
+		beq	.mw
 		addq.w	#2,d0
 		cmp.w	(a0),d0
 		beq	.lm
@@ -727,6 +710,8 @@ _cdis		moveq	#0,d4			;d4 = list number
 
 .e		pea	.cend
 		bsr	_p
+		cmp.l	(cop1lc,a3),d5		;has lc1 changed? maybe lace
+		bne	.j1
 
 .q		moveq	#-1,d0
 		rts
@@ -814,7 +799,28 @@ _pc		movem.l	d0-d1/a0-a1,-(a7)
 		bne	.diw
 		or.w	#256,d0		;set v8
 		bra	.diw
-.nodiwstop
+.nodiwstop	cmp.w	#bplcon0,(2,a7)
+		bne	.nobplcon0
+		move.w	(6,a7),d0
+		bfextu	d0{31-2:1},d1
+		move	d1,-(a7)
+		bfextu	d0{31-9:1},d1
+		move	d1,-(a7)
+		bfextu	d0{31-10:1},d1
+		move	d1,-(a7)
+		bfextu	d0{31-11:1},d1
+		move	d1,-(a7)
+		bfextu	d0{31-14:3},d1
+		btst	#4,d0
+		beq	.nobpl3
+		bset	#3,d1
+.nobpl3		move	d1,-(a7)
+		bfextu	d0{31-15:1},d1
+		move	d1,-(a7)
+		pea	.bplcon0
+		bsr	_pf
+		add.w	#6*2+4,a7
+.nobplcon0
 .end		pea	.3
 		bsr	_p
 		movem.l	(a7)+,_MOVEMREGS
@@ -823,25 +829,30 @@ _pc		movem.l	d0-d1/a0-a1,-(a7)
 .2		dc.b	"	;%s",0
 .3		dc.b	10,0
 .diwstrt	dc.b	" v=%d h=%d",0
+.bplcon0	dc.b	" hires=%d bpu=%d ham=%d dpf=%d color=%d lace=%d",0
 	EVEN
 
 ;##########################################################################
 
-_copwrite	moveq	#-1,d5
+_copwrite
+		move.l	(cop1lc,a3),d5		;d5 = lc1
+		move.l	(cop2lc,a3),d6		;d6 = lc2
+
+		moveq	#-1,d7			;d7 = copstop
 		move.l	(gl_rdarray+aa_copstop,GL),d0
 		beq	.cse
-		move.l	d0,d5
-		add.l	(lm_mem,LOC),d5
+		move.l	d0,d7
+		add.l	(lm_mem,LOC),d7
 .cse
 .j1		move.l	(cop1lc,a3),a0
 .off		add.l	(lm_mem,LOC),a0
 
 .c1n		cmp.l	#-2,(a0)
 		beq	.c1e
-		cmp.l	d5,a0
-		beq	.c1e
+		cmp.l	d7,a0			;copstop
+		beq	.c1s
 		movem.w	(a0)+,d0-d1
-		btst	#0,d0
+		btst	#0,d0			;skip/wait
 		bne	.c1n
 		cmp.w	#copjmp1,d0
 		beq	.j1
@@ -884,6 +895,19 @@ _copwrite	moveq	#-1,d5
 		or.w	#$8080,($200.w,a3,d0.w)
 		bra	.c1n
 .c1e
+		cmp.l	(cop1lc,a3),d5		;has lc1 changed? maybe lace
+		beq	.c1s
+	;copy custom
+		move.l	a3,a0
+		lea	(lm_custlace,LOC),a3
+		move.l	a3,a1
+		move.w	#512/2-1,d0
+.copy		move.l	(a0)+,(a1)+
+		dbf	d0,.copy
+		st	(lm_custlacetrue,LOC)
+		bra	.j1
+.c1s
+		move.l	(lm_cust,LOC),a3
 		rts
 
 ;##########################################################################
@@ -964,6 +988,7 @@ _dim_text	dc.b	"width=%ld height=%ld depth=%ld",10,0
 ; Errors
 _nomem		dc.b	"not enough free store",0
 _badcopstop	dc.b	"invalid argument for CopStop",10,0
+_custlace_missing dc.b	"custlace table is missing for lace picture",10,0
 
 ; Operationen
 _readargs	dc.b	"read arguments",0
