@@ -3,7 +3,7 @@
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn
 ;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.13 2008/02/22 13:24:41 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.14 2008/05/13 19:26:55 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -84,7 +84,7 @@ MAXNAMELEN=256
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.7 "
+		dc.b	"SP 1.8 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl,Psygore"
