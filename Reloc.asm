@@ -3,14 +3,15 @@
 ;  :Contents.	relocate exe to absolut address
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
-;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: error.i 1.2 1998/12/06 13:42:20 jah Exp $
+;  :Version.	$Id: Reloc.asm 0.6 1999/01/17 14:18:50 jah Exp jah $
 ;  :History.	11.06.96
 ;		20.06.96 minor
 ;		11.08.96 BUG register d2 not saved in _AdrHunk and _OffHunk
 ;			 BUG MemoryFlags was not maked out from Hunk-ID's
 ;		25.08.96 argument ADR/K uses now _etoi (allows hexadecimal input)
 ;		17.01.99 recompile because error.i changed
+;		02.05.10 FailReloc/S added, fails if exe has relocations and/or
+;			 has more than one hunk
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1996,1997,1998 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -37,6 +38,7 @@ LOC	EQUR	A5		;a5 for local vars
 		ULONG	aa_output
 		ULONG	aa_adr
 		ULONG	aa_quiet
+		ULONG	aa_failrelocs
 		LABEL	aa_SIZEOF
 
 	NSTRUCTURE	Globals,0
@@ -53,10 +55,16 @@ DEFAULT_ADR	= $400
 ;##########################################################################
 
 Version	 = 0
-Revision = 6
+Revision = 7
 
-	PURE
 	OUTPUT	C:Reloc
+	PURE
+	BOPT	O+			;enable optimizing
+	BOPT	OG+			;enable optimizing
+	BOPT	ODc-			;disable mulu optimizing
+	BOPT	ODd-			;disable muls optimizing
+	BOPT	wo-			;disable optimize warnings
+	;BOPT	sa+			;create symbol hunk
 
 	IFND	.passchk
 	DOSCMD	"WDate >T:date"
@@ -190,7 +198,11 @@ chka0	MACRO
 		bra	.nextname
 .noname		chka0
 		move.l	(a0)+,d7		;d7 = Anzahl der Hunks
-		addq.l	#8,a0			;lowhunk + highhunk
+		tst.l	(gl_rdarray+aa_failrelocs,GL)
+		beq	.nomh
+		cmp.l	#1,d7
+		bne	.failmanyhunks
+.nomh		addq.l	#8,a0			;lowhunk + highhunk
 		move.l	a0,a3			;A3 = STRUCT hunksize's
 		move.l	d7,d0
 		moveq	#0,d1
@@ -279,7 +291,9 @@ chka0	MACRO
 		add.l	d0,a0
 		bra	.nexthunk
 
-.relocs		chka0
+.relocs		tst.l	(gl_rdarray+aa_failrelocs,GL)
+		bne	.failrelocs
+		chka0
 		move.l	(a0)+,d2	;Anzahl der relocs
 		beq	.nexthunk
 		chka0
@@ -354,19 +368,23 @@ chka0	MACRO
 		clr.l	(gl_rc,GL)
 		bra	.freedest
 
+.failrelocs	lea	(_failrelocs),a0
+		bra	.printfail
+
+.failmanyhunks	lea	(_failmanyhunks),a0
+		bra	.printfail
+
 .badsym		lea	(_badsym),a0
-		bsr	_Print
-		bra	.freedest
+		bra	.printfail
 
 .badhunk	lea	(_badhunk),a0
-		bsr	_Print
-		bra	.freedest
+		bra	.printfail
 
 .corruptexe	lea	(_corruptexe),a0
-		bsr	_Print
 
-.freedest
-		move.l	(lm_destptr,LOC),d0
+.printfail	bsr	_Print
+
+.freedest	move.l	(lm_destptr,LOC),d0
 		beq	.afterfreedest
 		move.l	d0,a1
 		move.l	(gl_execbase,GL),a6
@@ -484,6 +502,8 @@ _corruptexe	dc.b	"executable is corrupt",10,0
 _badhunk	dc.b	"unknown hunk",10,0
 _badsym		dc.b	"unknown symbol",10,0
 _nomem		dc.b	"not enough free store",0
+_failmanyhunks	dc.b	"executable contains more than one hunk",10,0
+_failrelocs	dc.b	"executable contains relocations",10,0
 
 ; Operationen
 _readargs	dc.b	"read arguments",0
@@ -501,6 +521,7 @@ _template	dc.b	"INPUTFILE/A"		;name eines zu ladenden Files
 		dc.b	",OUTPUTFILE"		;savefile name
 		dc.b	",ADR/K"		;to relocate
 		dc.b	",QUIET/S"
+		dc.b	",FailRelocs/S"		;fail if program contains relocations
 		dc.b	0
 
 _ver		VER
