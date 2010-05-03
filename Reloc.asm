@@ -3,7 +3,7 @@
 ;  :Contents.	relocate exe to absolut address
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
-;  :Version.	$Id: Reloc.asm 0.6 1999/01/17 14:18:50 jah Exp jah $
+;  :Version.	$Id: Reloc.asm 0.7 2010/05/02 15:07:11 wepl Exp wepl $
 ;  :History.	11.06.96
 ;		20.06.96 minor
 ;		11.08.96 BUG register d2 not saved in _AdrHunk and _OffHunk
@@ -12,6 +12,7 @@
 ;		17.01.99 recompile because error.i changed
 ;		02.05.10 FailReloc/S added, fails if exe has relocations and/or
 ;			 has more than one hunk
+;			 symbol hunks fixed
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1996,1997,1998 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -255,9 +256,9 @@ chka0	MACRO
 		cmp.l	#HUNK_RELOC8,d0		;reloc8
 		beq	.relocs
 		cmp.l	#HUNK_EXT,d0		;ext
-		beq	.symboldata
+		beq	.ext
 		cmp.l	#HUNK_SYMBOL,d0		;symbol
-		beq	.symboldata
+		beq	.symbol
 		cmp.l	#HUNK_DEBUG,d0		;debug
 		beq	.addlws
 		cmp.l	#HUNK_END,d0		;end
@@ -310,7 +311,7 @@ chka0	MACRO
 		bne	.n
 		bra	.relocs
 
-.symboldata	chka0
+.ext		chka0
 		move.l	(a0),d0
 		beq	.nexthunk
 		and.l	#$00ffffff,d0
@@ -334,10 +335,10 @@ chka0	MACRO
 		beq	.morelw
 		cmp.b	#132,d0
 		beq	.morelw
-		bra	.badsym
+		bra	.badext
 
 .1lw		addq.l	#4,a0
-		bra	.symboldata
+		bra	.ext
 .more1lw	addq.l	#4,a0
 .morelw		chka0
 		move.l	(a0)+,d0
@@ -345,8 +346,15 @@ chka0	MACRO
 		add.l	d0,d0
 		bmi	.corruptexe
 		add.l	d0,a0
-		bra	.symboldata
+		bra	.ext
 
+.symbol		chka0
+		move.l	(a0)+,d0
+		beq	.nexthunk
+		lsl.l	#2,d0
+		add.l	d0,a0		;name
+		addq.l	#4,a0		;value
+		bra	.symbol
 .endfind
 		tst.l	(gl_rdarray+aa_quiet,GL)
 		bne	.quiet
@@ -374,7 +382,7 @@ chka0	MACRO
 .failmanyhunks	lea	(_failmanyhunks),a0
 		bra	.printfail
 
-.badsym		lea	(_badsym),a0
+.badext		lea	(_badext),a0
 		bra	.printfail
 
 .badhunk	lea	(_badhunk),a0
@@ -500,7 +508,7 @@ _ok		dc.b	"file has been relocated to address $%lx",10,0
 _badexe		dc.b	"not executable",10,0
 _corruptexe	dc.b	"executable is corrupt",10,0
 _badhunk	dc.b	"unknown hunk",10,0
-_badsym		dc.b	"unknown symbol",10,0
+_badext		dc.b	"unknown ext resolution",10,0
 _nomem		dc.b	"not enough free store",0
 _failmanyhunks	dc.b	"executable contains more than one hunk",10,0
 _failrelocs	dc.b	"executable contains relocations",10,0
