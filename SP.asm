@@ -1,9 +1,8 @@
 ;*---------------------------------------------------------------------------
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
-;  :Author.	Bert Jahn
-;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: SP.asm 1.14 2008/05/13 19:26:55 wepl Exp wepl $
+;  :Author.	Bert Jahn, Philippe Muhlheim
+;  :Version.	$Id: SP.asm 1.15 2008/12/17 16:36:22 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -23,8 +22,8 @@
 ;		13.05.08 extra infos for bplcon0 added
 ;			 dumps multiple copper lists if lc1 will be changed
 ;			 better lace support
+;		12.12.10 now checks for 68020 available
 ;  :Requires.	OS V37+
-;  :Copyright.	© 1998-2002 Bert Jahn/Philippe Muhlheim, All Rights Reserved
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
 ;---------------------------------------------------------------------------*
@@ -32,6 +31,7 @@
 
 	INCDIR	Includes:
 	INCLUDE	lvo/exec.i
+	INCLUDE	exec/execbase.i
 	INCLUDE	exec/memory.i
 	INCLUDE	lvo/dos.i
 	INCLUDE	dos/dos.i
@@ -84,7 +84,7 @@ MAXNAMELEN=256
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.8 "
+		dc.b	"SP 1.9 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl,Psygore"
@@ -112,6 +112,13 @@ VER	MACRO
 		lea	(_ver),a0
 		bsr	_Print
 
+		move.l	(gl_execbase,GL),a0
+		btst	#AFB_68020,(AttnFlags+1,a0)
+		bne	.cpuok
+		lea	(_20req),a0
+		bsr	_Print
+		bra	.cpufail
+.cpuok
 		lea	(gl_rdarray,GL),a0
 		moveq	#aa_SIZEOF/4-1,d0
 .0		clr.l	(a0)+
@@ -149,6 +156,7 @@ VER	MACRO
 		move.l	(gl_dosbase,GL),a6
 		jsr	(_LVOFreeArgs,a6)
 .noargs
+.cpufail
 		move.l	(gl_dosbase,GL),a1
 		move.l	(gl_execbase,GL),a6
 		jsr	(_LVOCloseLibrary,a6)
@@ -1011,6 +1019,7 @@ _template	dc.b	"OutputFile/A"
 		dc.b	",NoCopLst/S"
 		dc.b	0
 
+_20req		dc.b	"Sorry, this program requires at least a 68020.",10,0
 _ver		VER
 		dc.b	10,0
 
