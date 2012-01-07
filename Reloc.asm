@@ -3,7 +3,7 @@
 ;  :Contents.	relocate exe to absolut address
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
-;  :Version.	$Id: Reloc.asm 0.7 2010/05/02 15:07:11 wepl Exp wepl $
+;  :Version.	$Id: Reloc.asm 0.8 2010/05/03 00:34:34 wepl Exp wepl $
 ;  :History.	11.06.96
 ;		20.06.96 minor
 ;		11.08.96 BUG register d2 not saved in _AdrHunk and _OffHunk
@@ -13,6 +13,7 @@
 ;		02.05.10 FailReloc/S added, fails if exe has relocations and/or
 ;			 has more than one hunk
 ;			 symbol hunks fixed
+;		06.01.12 missing initialization of aa_failrelocs fixed
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1996,1997,1998 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -56,7 +57,7 @@ DEFAULT_ADR	= $400
 ;##########################################################################
 
 Version	 = 0
-Revision = 7
+Revision = 8
 
 	OUTPUT	C:Reloc
 	PURE
@@ -90,8 +91,9 @@ VER	MACRO
 		move.l	(4).w,(gl_execbase,GL)
 		clr.l	(gl_rdarray+aa_output,GL)
 		clr.l	(gl_rdarray+aa_adr,GL)
-		move.l	#20,(gl_rc,GL)
 		clr.l	(gl_rdarray+aa_quiet,GL)
+		clr.l	(gl_rdarray+aa_failrelocs,GL)
+		move.l	#20,(gl_rc,GL)
 
 		move.l	#37,d0
 		lea	(_dosname),a1
