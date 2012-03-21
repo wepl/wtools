@@ -2,7 +2,7 @@
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn, Philippe Muhlheim
-;  :Version.	$Id: SP.asm 1.15 2008/12/17 16:36:22 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.16 2010/12/12 20:22:37 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -23,6 +23,7 @@
 ;			 dumps multiple copper lists if lc1 will be changed
 ;			 better lace support
 ;		12.12.10 now checks for 68020 available
+;		21.03.12 parsing whdload.prefs fixed
 ;  :Requires.	OS V37+
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
@@ -84,7 +85,7 @@ MAXNAMELEN=256
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.9 "
+		dc.b	"SP 1.10 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl,Psygore"
@@ -212,6 +213,7 @@ _getname	movem.l	d2-d7,-(a7)
 		tst.b	(a7)			;empty line
 		beq	.g_next
 
+		moveq	#13,d0			;string length
 		lea	_cfgid,a0
 		move.l	a7,a1			;actual global cfg line
 		bsr	_StrNCaseCmp
