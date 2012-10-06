@@ -2,13 +2,13 @@
 ;  :Program.	bin2pic.asm
 ;  :Contents.	Bin 2 IFF-pic
 ;  :Author.	Bert Jahn
-;  :EMail.	jah@pub.th-zwickau.de
-;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
+;  :EMail.	wepl"whdload.de
 ;  :History.	V 0.1 17.10.95
 ;		0.2	13.01.96 anpassung auf macros
 ;		0.3	02.03.96 cf2 support added
 ;		0.4	20.05.96 chaoseng added / buf with extcols removed
 ;		0.5	17.02.04 Pinball Wizard ("Unit") added
+;		15.06.08 cf1 support added
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -47,11 +47,15 @@ LOC	EQUR	A5		;a5 for local vars
 
 	PURE
 	OUTPUT	C:Bin2Pic
+	BOPT	O+				;enable optimizing
+	BOPT	OG+				;enable optimizing
+	BOPT	ODd-				;disable mul optimizing
+	BOPT	ODe-				;disable mul optimizing
 	SECTION	"",CODE,RELOC16
 
 
 VER	MACRO
-		dc.b	"bin2pic 0.5 "
+		dc.b	"bin2pic 0.6 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Bert Jahn"
@@ -68,6 +72,7 @@ VER	MACRO
 
 		link	GL,#gl_SIZEOF
 		move.l	(4).w,(gl_execbase,GL)
+		clr.l	(gl_rdarray+aa_output,GL)
 
 		move.l	#37,d0
 		lea	(_dosname),a1
@@ -133,13 +138,29 @@ _picfmts
 		dc.w	200		;height
 		dc.w	64		;offset pic
 		dc.w	0		;offset cols
-.ab3d		dc.l	.cf2f		;next
+.ab3d		dc.l	.cf1a		;next
 		dc.l	71680		;size
 		dc.w	0		;flags
 		dc.w	8		;depth
 		dc.w	320		;witdh
 		dc.w	224		;height
 		dc.w	0		;offset pic
+		dc.w	0		;offset cols
+.cf1a		dc.l	.cf1b		;next
+		dc.l	41152		;size
+		dc.w	0		;flags
+		dc.w	4		;depth
+		dc.w	320		;witdh
+		dc.w	256		;height
+		dc.w	32		;offset pic
+		dc.w	0		;offset cols
+.cf1b		dc.l	.cf2f		;next
+		dc.l	51464		;size
+		dc.w	0		;flags
+		dc.w	5		;depth
+		dc.w	320		;witdh
+		dc.w	256		;height
+		dc.w	64		;offset pic
 		dc.w	0		;offset cols
 .cf2f		dc.l	.cf2e		;next
 		dc.l	40960		;size
