@@ -2,16 +2,16 @@
 ;  :Program.	ITD.asm
 ;  :Contents.	Image To Disk
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@kagi.com
-;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: error.i 1.2 1998/12/06 13:42:20 jah Exp $
+;  :Version.	$Id: ITD.asm 0.17 1999/01/17 14:18:31 jah Exp jah $
 ;  :History.	29.10.97 start, based on DIC source
 ;		24.11.98 some messages fixed when writing files larger than device
 ;		17.01.99 recompile because error.i changed
-;  :Requires.	OS V37+
-;  :Copyright.	© 1997,1998 Bert Jahn, All Rights Reserved
+;		19.12.12 mulu32 replaced by utillib, correct size display/check for drives > 2GB,
+;			 now requires v39
+;  :Requires.	OS V39+
+;  :Copyright.	© 1997,1998,2012 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
-;  :Translator.	Barfly V1.130
+;  :Translator.	Barfly V2.9
 ;  :To Do.
 ;---------------------------------------------------------------------------*
 ;##########################################################################
@@ -22,29 +22,28 @@
 	INCLUDE	exec/io.i
 	INCLUDE	exec/memory.i
 	INCLUDE	lvo/dos.i
+	INCLUDE	lvo/utility.i
 	INCLUDE	dos/dos.i
 	INCLUDE	devices/trackdisk.i
 
 	INCLUDE	macros/ntypes.i
-	INCLUDE	macros/mulu32.i
 
 ;++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 	STRUCTURE	Globals,0
 		APTR	gl_execbase
 		APTR	gl_dosbase
+		APTR	gl_utilbase
 		APTR	gl_rdargs
 		LABEL	gl_rdarray
 		ULONG	gl_rd_file
 		ULONG	gl_rd_device
 		ULONG	gl_rd_format
-	;	ULONG	gl_rd_force
 		ULONG	gl_rc
 		ALIGNLONG
 		LABEL	gl_SIZEOF
 
 BREAKCOUNT	= 1000
-MAXFILENAMESIZE	= 30		;31 with the termination zero
 MAXDISKSIZE	= 2000000	;security -> max size file/device
 
 ;##########################################################################
@@ -54,10 +53,16 @@ LOC	EQUR	A5		;a5 for local vars
 CPU	=	68000
 
 Version	 = 0
-Revision = 17
+Revision = 18
 
+	IFD BARFLY
 	PURE
 	OUTPUT	C:ITD
+	BOPT	O+				;enable optimizing
+	BOPT	OG+				;enable optimizing
+	BOPT	ODd-				;disable mul optimizing
+	BOPT	ODe-				;disable mul optimizing
+	ENDC
 
 	IFND	.passchk
 	DOSCMD	"WDate >T:date"
@@ -90,10 +95,15 @@ VER	MACRO
 
 		move.l	#37,d0
 		lea	(_dosname),a1
-		move.l	(gl_execbase,GL),a6
 		jsr	_LVOOpenLibrary(a6)
 		move.l	d0,(gl_dosbase,GL)
 		beq	.nodoslib
+
+		move.l	#39,d0
+		lea	(_utilname),a1
+		jsr	_LVOOpenLibrary(a6)
+		move.l	d0,(gl_utilbase,GL)
+		beq	.noutillib
 
 		lea	(_ver),a0
 		bsr	_Print
@@ -120,6 +130,10 @@ VER	MACRO
 		move.l	(gl_dosbase,GL),a6
 		jsr	(_LVOFreeArgs,a6)
 .noargs
+		move.l	(gl_utilbase,GL),a1
+		move.l	(gl_execbase,GL),a6
+		jsr	(_LVOCloseLibrary,a6)
+.noutillib
 		move.l	(gl_dosbase,GL),a1
 		move.l	(gl_execbase,GL),a6
 		jsr	(_LVOCloseLibrary,a6)
@@ -203,15 +217,42 @@ _Main		link	LOC,#lm_SIZEOF
 		sub.l	(lm_di+devi_LowCyl,LOC),d0
 		addq.l	#1,d0					;cylinders
 		move.l	(lm_di+devi_Surfaces,LOC),d1
-		mulu32	d1,d0					;tracks
+		move.l	(gl_utilbase,GL),a0
+		jsr	(_LVOUMult32,a0)
 		move.l	(lm_di+devi_BlocksPerTrack,LOC),d1
-		mulu32	d1,d0					;blocks
+		jsr	(_LVOUMult32,a0)
 		move.l	(lm_di+devi_SizeBlock,LOC),d1
-		mulu32	d1,d0					;disksize
-		move.l	d0,d5					;D5 = disk size
-		
+		jsr	(_LVOUMult64,a0)
+		move.l	d0,d5
+		move.l	d1,d4					;D4:D5 = disk size
+
+		moveq	#0,d2
+		tst.l	d1
+		bne	.k
+		cmp.l	#1000000,d0
+		blo	.go
+.k		moveq	#"K",d2
+		and.w	#-1<<10,d0
+		move.w	d1,d3
+		and.w	#$3ff,d3
+		or.w	d3,d0
+		moveq	#10,d3
+		ror.l	d3,d0
+		lsr.l	d3,d1
+		bne	.m
+		cmp.l	#1000000,d0
+		blo	.go
+.m		moveq	#"M",d2
+		and.w	#-1<<10,d0
+		move.w	d1,d3
+		and.w	#$3ff,d3
+		or.w	d3,d0
+		moveq	#10,d3
+		ror.l	d3,d0
+.go
 		lea	(_m_diskgeo),a0
-		move.l	d5,-(a7)
+		move.l	d2,-(a7)
+		move.l	d0,-(a7)
 		move.l	(lm_di+devi_HighCyl,LOC),-(a7)
 		move.l	(lm_di+devi_LowCyl,LOC),-(a7)
 		move.l	(lm_di+devi_BlocksPerTrack,LOC),-(a7)
@@ -219,11 +260,13 @@ _Main		link	LOC,#lm_SIZEOF
 		move.l	(lm_di+devi_SizeBlock,LOC),-(a7)
 		move.l	a7,a1
 		bsr	_PrintArgs
-		add.w	#6*4,a7
-		
+		add.w	#7*4,a7
+
+		tst.l	d4
+		bne	.dsizefail
 		cmp.l	#MAXDISKSIZE,d5
 		blo	.dsizeok
-		lea	(_bigdsize),a0
+.dsizefail	lea	(_bigdsize),a0
 		bsr	_Print
 		bra	.bigdsize
 .dsizeok
@@ -282,9 +325,11 @@ _Main		link	LOC,#lm_SIZEOF
 		jsr	(_LVODoIO,a6)
 		move.l	(IO_ACTUAL,a2),(IOTD_COUNT,a2)		;the diskchanges
 
-		move.l	(lm_di+devi_BlocksPerTrack,LOC),d5
+		move.l	(lm_di+devi_BlocksPerTrack,LOC),d0
 		move.l	(lm_di+devi_SizeBlock,LOC),d1
-		mulu32	d1,d5					;D5 = track size
+		move.l	(gl_utilbase,GL),a0
+		jsr	(_LVOUMult32,a0)
+		move.l	d0,d5					;D5 = track size
 		
 		moveq	#0,d2					;D2 = actual track
 
@@ -379,7 +424,7 @@ _defdev		dc.b	"DF0:",0
 
 ;Messages
 _m_writedisk	dc.b	"write to ",155,"1m%s",155,"22m: (%s %ld)",10,0
-_m_diskgeo	dc.b	"(blksize=%ld heads=%ld blktrk=%ld lcyl=%ld hcyl=%ld) size=%ld",10,0
+_m_diskgeo	dc.b	"(blksize=%lu heads=%lu blktrk=%lu lcyl=%lu hcyl=%lu) size=%lu %lcByte",10,0
 _diskprogress	dc.b	11,"writing track %ld left %ld  ",10,0
 
 ; Errors
@@ -388,8 +433,8 @@ _noport		dc.b	"can't create MessagePort",0
 _noioreq	dc.b	"can't create IO-Request",0
 _nodev		dc.b	"device doesn't exist",0
 _baddev		dc.b	"cannot handle this device",0
-_bigfsize	dc.b	"file is to large",10,0
-_bigdsize	dc.b	"device is to large",10,0
+_bigfsize	dc.b	"file is too large",10,0
+_bigdsize	dc.b	"device is too large",10,0
 _tosmall	dc.b	"WARNING file is smaller than device",10,0
 _tobig		dc.b	"WARNING file is bigger than device",10,0
 
@@ -401,11 +446,11 @@ _opendevice	dc.b	"open device",0
 
 ;subsystems
 _dosname	DOSNAME
+_utilname	dc.b	"utility.library",0
 
 _template	dc.b	"FILE/A"		;file write to disk
 		dc.b	",DEVICE"		;name of device (default "DF0:)
 		dc.b	",FORMAT/S"		;format device
-	;	dc.b	",FORCE/S"		;power !
 		dc.b	0
 
 _ver		VER
