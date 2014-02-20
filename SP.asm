@@ -2,7 +2,7 @@
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn, Philippe Muhlheim
-;  :Version.	$Id: SP.asm 1.16 2010/12/12 20:22:37 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.17 2012/03/21 17:20:26 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -24,6 +24,8 @@
 ;			 better lace support
 ;		12.12.10 now checks for 68020 available
 ;		21.03.12 parsing whdload.prefs fixed
+;		18.10.12 support for COLS chunk added
+;		20.02.14 using dos.AddPart to form dump file name
 ;  :Requires.	OS V37+
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
@@ -85,7 +87,7 @@ MAXNAMELEN=256
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.10 "
+		dc.b	"SP 1.12 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl,Psygore"
@@ -226,10 +228,12 @@ _getname	movem.l	d2-d7,-(a7)
 .cpy		move.b	(a0)+,(a1)+
 		bne	.cpy
 
+		lea	(gl_name,GL),a0
+		move.l	a0,d1
 		lea	_name,a0
-		lea	(gl_name,GL),a1
-		move.l	#MAXNAMELEN,d0
-		bsr	_AppendString
+		move.l	a0,d2
+		move.l	#MAXNAMELEN,d3
+		jsr	(_LVOAddPart,a6)
 
 .g_free		add.l	d5,a7			;free buffer
 		move.l	d6,d1
@@ -247,6 +251,7 @@ _getname	movem.l	d2-d7,-(a7)
 		NAPTR	lm_header
 		NAPTR	lm_cust
 		NAPTR	lm_mem
+		NAPTR	lm_cols
 		NULONG	lm_cmapsize
 		NULONG	lm_bodysize
 		NULONG	lm_destptr
@@ -271,10 +276,11 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 
 		bsr	_getname
 		bsr	_LoadFileMsg
-		move.l	d1,(lm_filesize,LOC)
+		move.l	d1,(lm_filesize,LOC)	;D1 = dump size
 		move.l	d0,(lm_fileptr,LOC)
 		beq	.afilefree
 
+		clr.l	(lm_cols,LOC)
 		clr.l	(lm_mem,LOC)
 		clr.l	(lm_cust,LOC)
 		clr.l	(lm_header,LOC)
@@ -292,8 +298,8 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		cmp.l	#ID_WHDD,(a0)+
 		bne	.filefree
 		subq.l	#4,d1
-.idn		move.l	(a0)+,d0
-		move.l	(a0)+,d2
+.idn		move.l	(a0)+,d0		;chunk id
+		move.l	(a0)+,d2		;chunk size
 		subq.l	#8,d1
 		bcs	.filefree
 		cmp.l	#ID_CUST,d0
@@ -305,7 +311,10 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 .id2		cmp.l	#ID_HEAD,d0
 		bne	.id3
 		move.l	a0,(lm_header,LOC)
-.id3		add.l	d2,a0
+.id3		cmp.l	#ID_COLS,d0
+		bne	.id4
+		move.l	a0,(lm_cols,LOC)
+.id4		add.l	d2,a0
 		sub.l	d2,d1
 		bcs	.filefree
 		bne	.idn
@@ -340,6 +349,30 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		mulu	#$11,d2
 		move.b	d2,(a1)+
 		dbf	d0,.sc2
+	;copy colors from COLS chunk if available
+		move.l	(lm_cols,LOC),d0
+		beq	.cols_end
+		move.l	d0,a0
+		lea	(lm_colors,LOC),a1
+		move.w	#255,d0
+.cols_lp	move.l	(a0)+,d1
+		bfextu	d1{4:4},d2
+		bfextu	d1{20:4},d3
+		lsl.l	#4,d2
+		or.l	d3,d2
+		move.b	d2,(a1)+
+		bfextu	d1{8:4},d2
+		bfextu	d1{24:4},d3
+		lsl.l	#4,d2
+		or.l	d3,d2
+		move.b	d2,(a1)+
+		bfextu	d1{12:4},d2
+		bfextu	d1{28:4},d3
+		lsl.l	#4,d2
+		or.l	d3,d2
+		move.b	d2,(a1)+
+		dbf	d0,.cols_lp
+.cols_end
 
 	;print coplc's
 		movem.l	(cop1lc,a3),d0-d1
@@ -369,8 +402,9 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 
 	;depth
 		bfextu	(bplcon0,a3){1:3},d6
-		bne	.3
-		moveq	#8,d6			;D6 = depth
+		btst	#4,(bplcon0+1,a3)
+		beq	.3
+		addq.l	#8,d6			;D6 = depth
 .3
 	;height
 		bfextu	(diwstrt,a3){0:8},d0
@@ -392,24 +426,36 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		beq	.custlace_missing
 .nolace
 	;width
-	ifeq 1
 		bfextu	(diwstrt,a3){8:8},d0
 		bfextu	(diwstop,a3){8:8},d4
 		add.w	#256,d4
 		sub.l	d0,d4			;D4 = width
-	else
+
+		movem.l	d4-d6,-(a7)
+
 		move.w	(ddfstop,a3),d4
-		sub.w	(ddfstrt,a3),d4
-		bfextu	(fmode,a3){14:2},d0
-		cmp.w	#3,d0
-		bne	.ddf1
-		mulu	#3,d4
-		addq.w	#8,d4
-		bra	.ddf2
-.ddf1		addq.w	#8,d4
-		add.w	d4,d4			;D4 = width
-.ddf2
-	endc
+		move.w	#$fe,d0
+		and.w	d0,d4
+		and.w	(ddfstrt,a3),d0
+		sub.w	d0,d4
+		moveq	#16,d3
+		btst	#0,(fmode+1,a3)
+		beq	.ddf1
+		add.w	d3,d3
+.ddf1		btst	#1,(fmode+1,a3)
+		beq	.ddf2
+		add.w	d3,d3
+.ddf2		add.w	d4,d4
+		add.w	d3,d4
+		subq.w	#1,d3
+		not.w	d3
+		and.w	d3,d4			;D4 = width
+
+		move.l	d4,-(a7)
+		pea	_dimcalc_text
+		bsr	_pf
+		add.w	#20,a7
+
 		tst.b	(bplcon0,a3)
 		bpl	.lores
 		add.w	d4,d4
@@ -432,13 +478,12 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.w	d0,(lm_widthskip,LOC)
 
 	;check ehb
+		btst	#2,(bplcon2,a3)		;KILLEHB
+		beq	.noehb
 		move.w	(bplcon0,a3),d0
 		and.w	#%1111110001010000,d0
 		cmp.w	#%0110000000000000,d0	;HIRES=HAM=DPF=SHRES=0 depth=6
 		seq	(lm_ehb,LOC)
-		btst	#2,(bplcon2,a3)		;KILLEHB
-		beq	.noehb
-		sf	(lm_ehb,LOC)
 .noehb
 
 	;calc pic size
@@ -839,7 +884,7 @@ _pc		movem.l	d0-d1/a0-a1,-(a7)
 .2		dc.b	"	;%s",0
 .3		dc.b	10,0
 .diwstrt	dc.b	" v=%d h=%d",0
-.bplcon0	dc.b	" hires=%d bpu=%d ham=%d dpf=%d color=%d lace=%d",0
+.bplcon0	dc.b	" 15:hires=%d 14-12,4:bpu=%d 11:ham=%d 10:dpf=%d 9:color=%d 2:lace=%d",0
 	EVEN
 
 ;##########################################################################
@@ -993,7 +1038,8 @@ _mem_text	dc.b	"BaseMemSize=$%lx",10,0
 _cop_text	dc.b	"cop1lc=$%lx cop2lc=$%lx",10,0
 _copdump_text	dc.b	"*** copperlist %ld ***",10,0
 _badci_text	dc.b	"bad copper instruction: %8lx",10,0
-_dim_text	dc.b	"width=%ld height=%ld depth=%ld",10,0
+_dim_text	dc.b	"using: width=%ld height=%ld depth=%ld",10,0
+_dimcalc_text	dc.b	"calculated: ddfwidth=%ld diwwidth=%ld height=%ld depth=%ld",10,0
 
 ; Errors
 _nomem		dc.b	"not enough free store",0
@@ -1009,8 +1055,8 @@ _dosname	dc.b	"dos.library",0
 _template	dc.b	"OutputFile/A"
 		dc.b	",Cop/K"
 		dc.b	",CS=CopStop/K"
-		dc.b	",Width/K"
-		dc.b	",Height/K"
+		dc.b	",W=Width/K"
+		dc.b	",H=Height/K"
 		dc.b	",con0/K"
 		dc.b	",mod1/K"
 		dc.b	",mod2/K"
@@ -1018,7 +1064,7 @@ _template	dc.b	"OutputFile/A"
 		dc.b	",pt2/K"
 		dc.b	",pt3/K"
 		dc.b	",pt4/K"
-		dc.b	",NoCopLst/S"
+		dc.b	",NCL=NoCopList/S"
 		dc.b	0
 
 _20req		dc.b	"Sorry, this program requires at least a 68020.",10,0
