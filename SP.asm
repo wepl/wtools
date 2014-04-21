@@ -2,7 +2,7 @@
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn, Philippe Muhlheim
-;  :Version.	$Id: SP.asm 1.17 2012/03/21 17:20:26 wepl Exp wepl $
+;  :Version.	$Id: SP.asm 1.18 2014/02/20 23:30:59 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -26,6 +26,11 @@
 ;		21.03.12 parsing whdload.prefs fixed
 ;		18.10.12 support for COLS chunk added
 ;		20.02.14 using dos.AddPart to form dump file name
+;		14.04.14 calculation of raster dma bytes per line based on ddf*, fmode and
+;			 resultion correctly implemented
+;			 copper disassembler enhanced for ddf*
+;			 ehb detected flag fixed, was random
+;			 support for color table offset via bplcon4 added
 ;  :Requires.	OS V37+
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
@@ -62,6 +67,7 @@ LOC	EQUR	A5		;a5 for local vars
 		ULONG	aa_pt3
 		ULONG	aa_pt4
 		ULONG	aa_nocoplst
+		ULONG	aa_ocs		;force OCS mode for ddfstrt/stop calc
 		LABEL	aa_SIZEOF
 
 MAXNAMELEN=256
@@ -84,6 +90,7 @@ MAXNAMELEN=256
 	BOPT	OG+				;enable optimizing
 	BOPT	ODd-				;disable mul optimizing
 	BOPT	ODe-				;disable mul optimizing
+	BOPT	sa+				;symbol hunks
 	MC68020
 
 VER	MACRO
@@ -257,8 +264,8 @@ _getname	movem.l	d2-d7,-(a7)
 		NULONG	lm_destptr
 		NSTRUCT	lm_colors,256*3
 		NSTRUCT	lm_custlace,512*2	;second custom area
-		NWORD	lm_widthskip		;amount of bytes which are displayed
-						;but will not be written to dest
+		NWORD	lm_widthskip		;amount of bytes which are read by raster dma
+						;but will not be written to the destination picture
 		NBYTE	lm_ehb			;extra half brite
 		NBYTE	lm_lace			;lace
 		NBYTE	lm_custlacetrue		;bool if second custom area is inited
@@ -268,10 +275,9 @@ _getname	movem.l	d2-d7,-(a7)
 _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		link	LOC,#lm_SIZEOF
 		
-		lea	(lm_colors,LOC),a0
-		moveq	#256*3/8-1,d0
-.clr4		clr.l	(a0)+
-		clr.l	(a0)+
+		move.l	LOC,a0
+		move.w	#-lm_SIZEOF/4-1,d0
+.clr4		clr.l	-(a0)
 		dbf	d0,.clr4
 
 		bsr	_getname
@@ -279,12 +285,6 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.l	d1,(lm_filesize,LOC)	;D1 = dump size
 		move.l	d0,(lm_fileptr,LOC)
 		beq	.afilefree
-
-		clr.l	(lm_cols,LOC)
-		clr.l	(lm_mem,LOC)
-		clr.l	(lm_cust,LOC)
-		clr.l	(lm_header,LOC)
-		clr.b	(lm_custlacetrue,LOC)
 
 		cmp.l	#20,d1
 		blt	.filefree
@@ -429,37 +429,85 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		bfextu	(diwstrt,a3){8:8},d0
 		bfextu	(diwstop,a3){8:8},d4
 		add.w	#256,d4
-		sub.l	d0,d4			;D4 = width
+		sub.l	d0,d4			;D4 = diw width
 
 		movem.l	d4-d6,-(a7)
 
+	;mask for ddf is OCS=$C ECS/AGA=$E
+		move.w	#$fffe,d0
+		tst.l	(gl_rdarray+aa_ocs,GL)
+		beq	.noocs
+		add.w	d0,d0
+.noocs
+		move.w	(ddfstrt,a3),d3
+		and.w	d0,d3
+		cmp.w	(ddfstrt,a3),d3
+		beq	.ddfs1
+		move.w	d3,-(a7)
+		move.w	(ddfstrt,a3),-(a7)
+		pea	_ddfstrt
+		pea	_ddfmask
+		bsr	_pf
+		add.w	#12,a7
+.ddfs1
 		move.w	(ddfstop,a3),d4
-		move.w	#$fe,d0
 		and.w	d0,d4
-		and.w	(ddfstrt,a3),d0
-		sub.w	d0,d4
-		moveq	#16,d3
-		btst	#0,(fmode+1,a3)
-		beq	.ddf1
-		add.w	d3,d3
-.ddf1		btst	#1,(fmode+1,a3)
-		beq	.ddf2
-		add.w	d3,d3
-.ddf2		add.w	d4,d4
-		add.w	d3,d4
-		subq.w	#1,d3
-		not.w	d3
-		and.w	d3,d4			;D4 = width
+		cmp.w	(ddfstop,a3),d4
+		beq	.ddfe1
+		move.w	d3,-(a7)
+		move.w	(ddfstop,a3),-(a7)
+		pea	_ddfstop
+		pea	_ddfmask
+		bsr	_pf
+		add.w	#12,a7
+.ddfe1
+	;get fmode
+		move.w	(fmode,a3),d0
+		and.w	#3,d0
+
+	;difference between dffstop and ddfstrt
+		sub.w	d3,d4
+		add.w	#6,d4			;round up at 2
+		move.w	#$f8,d1			;standard alignment
+		moveq	#8,d2			;d2 = factor
+		moveq	#64,d3			;d3 = extra fetch pixels
+		btst	#6,(bplcon0+1,a3)	;shres?
+		bne	.ddfcalc
+		tst.b	(bplcon0,a3)		;hires?
+		bpl	.ddflo
+	;hires
+		moveq	#4,d2			;d2 = factor
+		subq.w	#3,d0
+		beq	.ddfhi3
+		moveq	#32,d3			;d3 = extra fetch pixels
+		bra	.ddfcalc
+.ddfhi3		add.w	#8,d4
+		add.w	d1,d1
+		bra	.ddfcalc
+	;lores
+.ddflo		moveq	#2,d2			;d2 = factor
+		tst.w	d0
+		bne	.ddflo12
+		moveq	#16,d3			;d3 = extra fetch pixels
+		bra	.ddfcalc
+.ddflo12	subq.w	#3,d0
+		beq	.ddflo3
+		moveq	#32,d3			;d3 = extra fetch pixels
+		add.w	#8,d4
+		add.w	d1,d1
+		bra	.ddfcalc
+.ddflo3		add.w	#8+16,d4
+		lsl.w	#2,d1
+	;calc
+.ddfcalc	and.w	d1,d4
+		mulu	d2,d4
+		add.l	d3,d4			;width in pixel
 
 		move.l	d4,-(a7)
 		pea	_dimcalc_text
 		bsr	_pf
 		add.w	#20,a7
 
-		tst.b	(bplcon0,a3)
-		bpl	.lores
-		add.w	d4,d4
-.lores
 		move.l	(gl_rdarray+aa_height,GL),d0
 		beq	.h
 		move.l	d0,a0
@@ -479,7 +527,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 
 	;check ehb
 		btst	#2,(bplcon2,a3)		;KILLEHB
-		beq	.noehb
+		bne	.noehb
 		move.w	(bplcon0,a3),d0
 		and.w	#%1111110001010000,d0
 		cmp.w	#%0110000000000000,d0	;HIRES=HAM=DPF=SHRES=0 depth=6
@@ -547,19 +595,18 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 	;BMHD
 		move.l	#"BMHD",(a2)+
 		move.l	#20,(a2)+
-		move.w	d4,(a2)+
-		move.w	d5,(a2)+
+		move.w	d4,(a2)+		;width
+		move.w	d5,(a2)+		;height
 		clr.l	(a2)+			;xpos,ypos
-		move.w	d6,d0
-		move.b	d0,(a2)+
+		move.b	d6,(a2)+		;depth
 		clr.b	(a2)+			;mask
 		clr.b	(a2)+			;compression
 		clr.b	(a2)+			;pad
-		clr.w	(a2)+			;trans col
+		clr.w	(a2)+			;transparent color
 		move.b	#10,(a2)+		;x aspect
 		move.b	#11,(a2)+		;y aspect
-		move.w	d4,(a2)+		;screen
-		move.w	d5,(a2)+
+		move.w	d4,(a2)+		;page width
+		move.w	d5,(a2)+		;page height
 	;CAMG
 		move.l	#"CAMG",(a2)+
 		move.l	#4,(a2)+
@@ -569,9 +616,15 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.l	#"CMAP",(a2)+
 		move.l	(lm_cmapsize,LOC),d2
 		move.l	d2,(a2)+
-		lea	(lm_colors,LOC),a0
-.cmap		move.w	(a0)+,(a2)+
-		subq.l	#2,d2
+		moveq	#0,d0
+		move.b	(bplcon4,a3),d3
+.cmap		move.l	d0,d1
+		eor.b	d3,d1
+		mulu	#3,d1
+		move.l	(lm_colors.w,LOC,d1.l),(a2)
+		addq.l	#3,a2
+		addq.l	#1,d0
+		subq.l	#3,d2
 		bne	.cmap
 	;BODY
 		move.l	#"BODY",(a2)+
@@ -587,6 +640,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 .nolace3
 		move.w	d5,d3			;height
 
+	;copy bitplane data
 .9		lea	(bplpt,a3),a0
 		move.w	d6,d1			;depth
 .8		move.l	(a0),a1
@@ -601,7 +655,8 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.l	a1,(a0)+
 		subq.w	#1,d1
 		bne	.8
-		
+
+	;adjust bitplane pointer with modulo values an lm_widthskip
 		movem.w	(bpl1mod,a3),d0-d1
 		lea	(bplpt,a3),a0
 		moveq	#4-1,d2
@@ -721,7 +776,19 @@ _cdis		moveq	#0,d4			;d4 = list number
 		beq	.mw
 		cmp.w	#diwstop,d0
 		beq	.mw
+		cmp.w	#ddfstop,d0
+		beq	.mw
+		cmp.w	#ddfstrt,d0
+		beq	.mw
 		cmp.w	#bplcon0,d0
+		beq	.mw
+		cmp.w	#bplcon1,d0
+		beq	.mw
+		cmp.w	#bplcon2,d0
+		beq	.mw
+		cmp.w	#bplcon3,d0
+		beq	.mw
+		cmp.w	#bplcon4,d0
 		beq	.mw
 		addq.w	#2,d0
 		cmp.w	(a0),d0
@@ -821,7 +888,7 @@ _pf		movem.l	d0-d1/a0-a1,-(a7)
 		rts
 
 ;print custom
-_pc		movem.l	d0-d1/a0-a1,-(a7)
+_pc		movem.l	d0-d2/a0-a1,-(a7)
 		bsr	_GetCustomName
 		tst.l	d0
 		beq	.end
@@ -854,7 +921,21 @@ _pc		movem.l	d0-d1/a0-a1,-(a7)
 		bne	.diw
 		or.w	#256,d0		;set v8
 		bra	.diw
-.nodiwstop	cmp.w	#bplcon0,(2,a7)
+.nodiwstop	cmp.w	#ddfstrt,(2,a7)
+		beq	.ddf
+		cmp.w	#ddfstop,(2,a7)
+		bne	.noddf
+.ddf		moveq	#0,d0
+		move.b	(7,a7),d0
+	;	bclr	#0,d0
+		add.l	d0,d0
+		clr.w	-(a7)
+		move.w	d0,-(a7)
+		pea	.ddft
+		bsr	_pf
+		addq.l	#8,a7
+		bra	.end
+.noddf		cmp.w	#bplcon0,(2,a7)
 		bne	.nobplcon0
 		move.w	(6,a7),d0
 		bfextu	d0{31-2:1},d1
@@ -875,7 +956,75 @@ _pc		movem.l	d0-d1/a0-a1,-(a7)
 		pea	.bplcon0
 		bsr	_pf
 		add.w	#6*2+4,a7
-.nobplcon0
+.nobplcon0	cmp.w	#bplcon1,(2,a7)
+		bne	.nobplcon1
+		move.w	(6,a7),d0
+		bfextu	d0{31-15:2},d2
+		lsl.l	#4,d2
+		bfextu	d0{31-7:4},d1
+		add.l	d1,d2
+		lsl.l	#2,d2
+		bfextu	d0{31-13:2},d1
+		add.l	d1,d2
+		move.w	d2,-(a7)
+		bfextu	d0{31-11:2},d2
+		lsl.l	#4,d2
+		bfextu	d0{31-3:4},d1
+		add.l	d1,d2
+		lsl.l	#2,d2
+		bfextu	d0{31-9:2},d1
+		add.l	d1,d2
+		move.w	d2,-(a7)
+		pea	.bplcon1
+		bsr	_pf
+		add.w	#2*2+4,a7
+.nobplcon1	cmp.w	#bplcon2,(2,a7)
+		bne	.nobplcon2
+		move.w	(6,a7),d0
+		bfextu	d0{31-2:3},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-5:3},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-6:1},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-9:1},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-10:1},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-11:1},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-14:3},d1
+		move.l	d1,-(a7)
+		pea	.bplcon2
+		bsr	_pf
+		add.w	#8*2+4,a7
+.nobplcon2	cmp.w	#bplcon3,(2,a7)
+		bne	.nobplcon3
+		move.w	(6,a7),d0
+		bfextu	d0{31-7:2},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-9:1},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-12:3},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-15:3},d1
+		move.w	d1,-(a7)
+		pea	.bplcon3
+		bsr	_pf
+		add.w	#4*2+4,a7
+.nobplcon3	cmp.w	#bplcon4,(2,a7)
+		bne	.nobplcon4
+		move.w	(6,a7),d0
+		bfextu	d0{31-3:4},d1
+		move.l	d1,-(a7)
+		bfextu	d0{31-7:4},d1
+		move.w	d1,-(a7)
+		bfextu	d0{31-15:8},d1
+		move.w	d1,-(a7)
+		pea	.bplcon4
+		bsr	_pf
+		add.w	#4*2+4,a7
+.nobplcon4
 .end		pea	.3
 		bsr	_p
 		movem.l	(a7)+,_MOVEMREGS
@@ -883,8 +1032,13 @@ _pc		movem.l	d0-d1/a0-a1,-(a7)
 
 .2		dc.b	"	;%s",0
 .3		dc.b	10,0
-.diwstrt	dc.b	" v=%d h=%d",0
+.diwstrt	dc.b	" v=%d"
+.ddft		dc.b	" h=%d",0
 .bplcon0	dc.b	" 15:hires=%d 14-12,4:bpu=%d 11:ham=%d 10:dpf=%d 9:color=%d 2:lace=%d",0
+.bplcon1	dc.b	" scroll1=%d scroll2=%d",0
+.bplcon2	dc.b	" 14-12:zdsel=%ld 11:zden=%d 10:zdct=%d 9:kehb=%d 6:pf2pri=%d 5-3:pf2p=%d 2-0:pf1p=%d",0
+.bplcon3	dc.b	" 15-13:bank=%d 12-10:pf2of=%d 9:loct=%d 7-6:spres=%d",0
+.bplcon4	dc.b	" 15-8:bplam=%d 7-4:esprm=%d 3-0:osprm=%ld",0
 	EVEN
 
 ;##########################################################################
@@ -1040,6 +1194,9 @@ _copdump_text	dc.b	"*** copperlist %ld ***",10,0
 _badci_text	dc.b	"bad copper instruction: %8lx",10,0
 _dim_text	dc.b	"using: width=%ld height=%ld depth=%ld",10,0
 _dimcalc_text	dc.b	"calculated: ddfwidth=%ld diwwidth=%ld height=%ld depth=%ld",10,0
+_ddfstrt	dc.b	"ddfstrt",0
+_ddfstop	dc.b	"ddfstop",0
+_ddfmask	dc.b	"warning: %s got masked out, org=%d new=%d",10,0
 
 ; Errors
 _nomem		dc.b	"not enough free store",0
@@ -1065,6 +1222,7 @@ _template	dc.b	"OutputFile/A"
 		dc.b	",pt3/K"
 		dc.b	",pt4/K"
 		dc.b	",NCL=NoCopList/S"
+		dc.b	",OCS/S"
 		dc.b	0
 
 _20req		dc.b	"Sorry, this program requires at least a 68020.",10,0
