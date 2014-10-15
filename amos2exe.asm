@@ -1,6 +1,8 @@
 ;*---------------------------------------------------------------------------
 ;  :Program.	amos2exe.asm
 ;  :Contents.	extracts amiga hunk exe from amos-compiled program
+;		only second hunk with relocation information from third
+;		hunk is extracted
 ;  :Author.	Bert Jahn
 ;  :History.	13.10.14 initial
 ;  :Requires.	OS V37+
@@ -97,6 +99,7 @@ LOC	EQUR	A5		;a5 for local vars
 		NULONG	lm_srcsize
 		NULONG	lm_destsize
 		NULONG	lm_destptr
+		NULONG	lm_relocptr
 		NLABEL	lm_SIZEOF
 
 _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
@@ -136,16 +139,16 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		cmp.l	#$3e9,(a0)+
 		bne	.ff
 		move.l	(a0)+,d2
-		move.l	a0,a2		;a2 = packed data
+		move.l	a0,a2		;a2 = packed code
 		and.l	#$ffffff,d2
-		lsl.l	#2,d2		;d2 = packed size
+		lsl.l	#2,d2		;d2 = packed code size
 		add.l	d2,a0
 		cmp.l	#$3f2,(a0)+
 		bne	.ff
 		cmp.l	#$3e9,(a0)+
 		bne	.ff
 		move.l	(a0)+,d3
-		move.l	a0,a3		;a3 = reloc data
+		move.l	a0,a3		;a3 = reloc
 		and.l	#$ffffff,d3
 		lsl.l	#2,d3		;d3 = reloc size
 		add.l	d3,a0
@@ -157,11 +160,40 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		bra	.afterfreedest
 .fo
 	;unpacked length
-		move.l	d2,d5		;d5 = unpacked data
+		move.l	d2,d5		;d5 = unpacked code size
 		cmp.l	#'xVdg',(a2)
 		bne	.pn
 		move.l	(4,a2),d5
 .pn
+	;unpack relocs
+		clr.l	(lm_relocptr,LOC)
+		cmp.l	#'xVdg',(a3)
+		bne	.ro
+		move.l	(4,a3),d0
+		moveq	#MEMF_ANY,d1
+		move.l	(gl_execbase,GL),a6
+		jsr	(_LVOAllocVec,a6)
+		move.l	d0,(lm_relocptr,LOC)
+		bne	.rmemok
+		moveq	#0,d0
+		lea	(_nomem),a0
+		lea	(_allocdestmem),a1
+		bsr	_PrintError
+		bra	.afterfreedest
+.rmemok
+		move.l	d0,a1
+		addq.l	#8,a3
+		move.l	(a3)+,d1	;packed length
+		move.l	d1,d2
+.rpp		move.l	(a3)+,(a1)+
+		subq.l	#4,d2
+		bhi	.rpp
+		move.l	d0,a3
+		movem.l	d0-a6,-(a7)
+		move.l	d0,d3
+		bsr	UnSquash
+		movem.l	(a7)+,d0-a6
+.ro
 	;count relocs
 		move.l	a3,a0
 		moveq	#0,d4		;d4 = reloc count
@@ -261,6 +293,12 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		move.l	(gl_execbase,GL),a6
 		jsr	(_LVOFreeVec,a6)
 .afterfreedest
+		move.l	(lm_relocptr,LOC),d0
+		beq	.afterfreereloc
+		move.l	d0,a1
+		move.l	(gl_execbase,GL),a6
+		jsr	(_LVOFreeVec,a6)
+.afterfreereloc
 		move.l	(lm_srcptr,LOC),a1
 		move.l	(gl_execbase,GL),a6
 		jsr	(_LVOFreeVec,a6)
@@ -270,7 +308,6 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		rts
 
 ;##########################################################################
-
 **********************************
 *Entry
 *	
