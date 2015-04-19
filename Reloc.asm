@@ -3,7 +3,7 @@
 ;  :Contents.	relocate exe to absolut address
 ;  :Author.	Bert Jahn
 ;  :EMail.	wepl@kagi.com
-;  :Version.	$Id: Reloc.asm 0.8 2010/05/03 00:34:34 wepl Exp wepl $
+;  :Version.	$Id: Reloc.asm 0.9 2012/01/07 00:09:17 wepl Exp wepl $
 ;  :History.	11.06.96
 ;		20.06.96 minor
 ;		11.08.96 BUG register d2 not saved in _AdrHunk and _OffHunk
@@ -14,6 +14,7 @@
 ;			 has more than one hunk
 ;			 symbol hunks fixed
 ;		06.01.12 missing initialization of aa_failrelocs fixed
+;		26.01.15 new option CustReloc
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1996,1997,1998 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -41,6 +42,7 @@ LOC	EQUR	A5		;a5 for local vars
 		ULONG	aa_adr
 		ULONG	aa_quiet
 		ULONG	aa_failrelocs
+		ULONG	aa_custreloc
 		LABEL	aa_SIZEOF
 
 	NSTRUCTURE	Globals,0
@@ -57,7 +59,7 @@ DEFAULT_ADR	= $400
 ;##########################################################################
 
 Version	 = 0
-Revision = 8
+Revision = 9
 
 	OUTPUT	C:Reloc
 	PURE
@@ -93,6 +95,7 @@ VER	MACRO
 		clr.l	(gl_rdarray+aa_adr,GL)
 		clr.l	(gl_rdarray+aa_quiet,GL)
 		clr.l	(gl_rdarray+aa_failrelocs,GL)
+		clr.l	(gl_rdarray+aa_custreloc,GL)
 		move.l	#20,(gl_rc,GL)
 
 		move.l	#37,d0
@@ -161,11 +164,14 @@ VER	MACRO
 		NULONG	lm_srcsize
 		NULONG	lm_destsize
 		NULONG	lm_destptr
+		NULONG	lm_relocptr
+		NULONG	lm_reloc
 		NLABEL	lm_SIZEOF
 
 _Main		movem.l	d2/a2/a6,-(a7)
 		link	LOC,#lm_SIZEOF
 		clr.l	(lm_destptr,LOC)
+		clr.l	(lm_relocptr,LOC)
 
 		move.l	(gl_rdarray+aa_input,GL),a0
 		pea	.r1
@@ -228,7 +234,19 @@ chka0	MACRO
 		bsr	_Print
 		bra	.freesource
 .g
-
+		tst.l	(gl_rdarray+aa_custreloc,GL)
+		beq	.nocr1
+		move.l	(lm_destsize,LOC),d0
+		lsr.l	#1,d0			;16-bit per reloc
+		move.l	#MEMF_ANY,d1
+		jsr	(_LVOAllocVec,a6)
+		move.l	d0,(lm_reloc,LOC)
+		move.l	d0,(lm_relocptr,LOC)
+		bne	.nocr1
+		lea	(_nomem),a0
+		bsr	_Print
+		bra	.freedest
+.nocr1
 		move.l	a3,a0
 		add.l	d7,a0
 		add.l	d7,a0
@@ -267,7 +285,7 @@ chka0	MACRO
 		bne	.badhunk
 		
 		addq.l	#1,d6
-		cmp.l	d6,d7		;last hunk ?
+		cmp.l	d6,d7			;last hunk ?
 		beq	.endfind
 		bra	.nexthunk
 
@@ -309,6 +327,15 @@ chka0	MACRO
 .n		chka0
 		move.l	(a0)+,d0
 		add.l	d1,(a2,d0.l)
+
+		tst.l	(gl_rdarray+aa_custreloc,GL)
+		beq	.nocr2
+		add.l	a2,d0
+		sub.l	(lm_destptr,LOC),d0
+		move.l	(lm_reloc,LOC),a6
+		move.w	d0,(a6)+
+		move.l	a6,(lm_reloc,LOC)
+.nocr2
 		sub.l	#1,d2
 		bne	.n
 		bra	.relocs
@@ -374,9 +401,30 @@ chka0	MACRO
 		beq	_SaveFileMsg
 		bra	_SaveFile
 .r2		tst.l	d0
-		beq	.freedest
-		clr.l	(gl_rc,GL)
-		bra	.freedest
+		beq	.freereloc
+
+		tst.l	(gl_rdarray+aa_custreloc,GL)
+		beq	.success
+
+		move.l	(lm_relocptr,LOC),a0
+		move.l	(lm_reloc,LOC),a1
+		move.l	a1,d0
+		sub.l	a0,d0
+		lsr.l	#1,d0		;count of relocs
+		move.w	d0,(a1)+
+		sub.l	a0,a1
+		move.l	a1,d0		;length
+		move.l	(gl_rdarray+aa_output,GL),a1
+		bsr	_AppendOnFile
+		tst.l	d0
+		bne	.success
+		move.l	(gl_rdarray+aa_output,GL),d1
+		move.l	(gl_dosbase,GL),a6
+		jsr	(_LVODeleteFile,a6)
+		bra	.freereloc
+
+.success	clr.l	(gl_rc,GL)
+		bra	.freereloc
 
 .failrelocs	lea	(_failrelocs),a0
 		bra	.printfail
@@ -394,6 +442,12 @@ chka0	MACRO
 
 .printfail	bsr	_Print
 
+.freereloc	move.l	(lm_relocptr,LOC),d0
+		beq	.afterfreereloc
+		move.l	d0,a1
+		move.l	(gl_execbase,GL),a6
+		jsr	(_LVOFreeVec,a6)
+.afterfreereloc
 .freedest	move.l	(lm_destptr,LOC),d0
 		beq	.afterfreedest
 		move.l	d0,a1
@@ -500,6 +554,7 @@ _OffHunk	movem.l	d1-d2/a0,-(a7)
 		LoadFileMsg
 		SaveFile
 		SaveFileMsg
+		AppendOnFile
 	INCLUDE	strings.i
 		etoi
 
@@ -532,6 +587,7 @@ _template	dc.b	"INPUTFILE/A"		;name eines zu ladenden Files
 		dc.b	",ADR/K"		;to relocate
 		dc.b	",QUIET/S"
 		dc.b	",FailRelocs/S"		;fail if program contains relocations
+		dc.b	",CustReloc/S"		;create a file with custom relocations at the end of file
 		dc.b	0
 
 _ver		VER
