@@ -2,7 +2,7 @@
 ;  :Program.	ITD.asm
 ;  :Contents.	Image To Disk
 ;  :Author.	Bert Jahn
-;  :Version.	$Id: ITD.asm 0.18 2012/12/19 03:57:43 wepl Exp wepl $
+;  :Version.	$Id: ITD.asm 0.19 2013/01/07 21:02:35 wepl Exp wepl $
 ;  :History.	29.10.97 start, based on DIC source
 ;		24.11.98 some messages fixed when writing files larger than device
 ;		17.01.99 recompile because error.i changed
@@ -11,6 +11,7 @@
 ;		03.01.13 reading/writing files larger 4GB supported
 ;			 correct offset on writing if not starting on block #0
 ;			 async device operation implemented
+;		12.07.15 no longer checks for dol_Task in _GetDeviceInfo
 ;  :Requires.	OS V39+
 ;  :Copyright.	© 1997,1998,2012,2013 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -68,7 +69,7 @@ LOC	EQUR	A5		;a5 for local vars
 CPU	=	68000
 
 Version	 = 1
-Revision = 1
+Revision = 2
 
 	IFD BARFLY
 	PURE
