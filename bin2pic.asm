@@ -9,6 +9,7 @@
 ;		0.4	20.05.96 chaoseng added / buf with extcols removed
 ;		0.5	17.02.04 Pinball Wizard ("Unit") added
 ;		15.06.08 cf1 support added
+;		2019-11-01 support for Poker Nights added
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -51,11 +52,10 @@ LOC	EQUR	A5		;a5 for local vars
 	BOPT	OG+				;enable optimizing
 	BOPT	ODd-				;disable mul optimizing
 	BOPT	ODe-				;disable mul optimizing
-	SECTION	"",CODE,RELOC16
-
+	BOPT	sa+				;write symbol hunks
 
 VER	MACRO
-		dc.b	"bin2pic 0.6 "
+		dc.b	"bin2pic 0.7 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Bert Jahn"
@@ -122,12 +122,14 @@ VER	MACRO
 		UWORD	pf_height
 		UWORD	pf_offsetpic
 		UWORD	pf_offsetcols
+		APTR	pf_cols
 		LABEL	pf_SIZEOF
 
 	BITDEF	PFF,OWNCOLS,0		;own color table is in file
 	BITDEF	PFF,HAM,1		;picture is in HAM
 	BITDEF	PFF,INLEAV,2		;source picture is already interleaved saved
 	BITDEF	PFF,EXTCOLS,3		;extern palettefile
+	BITDEF	PFF,FIXCOLS,4		;fix colors via pf_cols
 
 _picfmts
 .ce		dc.l	.ab3d		;next		;converted own first 32 cols + 320x200x5
@@ -288,7 +290,7 @@ _picfmts
 		dc.w	32		;offset pic
 		dc.w	0		;offset cols
 	;XYMOX WindItUp
-.wip		dc.l	0		;next
+.wip		dc.l	.pn		;next
 		dc.l	70400		;size
 		dc.w	0		;flags
 		dc.w	4		;depth
@@ -296,6 +298,18 @@ _picfmts
 		dc.w	220		;height
 		dc.w	0		;offset pic
 		dc.w	0		;offset cols
+	;Poker Nights
+.pn		dc.l	0		;next
+		dc.l	34848		;size
+		dc.w	PFFF_HAM|PFFF_FIXCOLS	;flags
+		dc.w	6		;depth
+		dc.w	192		;witdh
+		dc.w	242		;height
+		dc.w	0		;offset pic
+		dc.w	0		;offset cols
+		dl	.pn_cols
+.pn_cols	dl	$00000333,$07400555,$0A600D00,$0B700888
+		dl	$0F00011F,$0AAA0F95,$0FB70FF0,$0DDD0FFF
 
 _picfmtdummy	dc.l	0		;next
 		dc.l	0		;size
@@ -469,6 +483,10 @@ _Main		movem.l	d2/a2/a6,-(a7)
 		bne	.nc
 		bra	.cmapfertig
 .def		lea	(_defcols),a1
+		btst	#PFFB_FIXCOLS,(pf_flags+1,a2)
+		beq	.nofixcols
+		move.l	(pf_cols,a2),a1
+.nofixcols
 		moveq	#PFFB_OWNCOLS,d2
 		move.w	(pf_flags,a2),d1
 		btst	d2,d1
