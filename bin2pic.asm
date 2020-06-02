@@ -10,6 +10,7 @@
 ;		0.5	17.02.04 Pinball Wizard ("Unit") added
 ;		15.06.08 cf1 support added
 ;		2019-11-01 support for Poker Nights added
+;		2020-06-01 pf_offsetcols changed from word to long
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -121,7 +122,7 @@ VER	MACRO
 		UWORD	pf_width
 		UWORD	pf_height
 		UWORD	pf_offsetpic
-		UWORD	pf_offsetcols
+		ULONG	pf_offsetcols
 		APTR	pf_cols
 		LABEL	pf_SIZEOF
 
@@ -136,189 +137,233 @@ _picfmts
 		dc.l	40064		;size
 		dc.w	PFFF_OWNCOLS	;flags
 		dc.w	5		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	200		;height
 		dc.w	64		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .ab3d		dc.l	.cf1a		;next
 		dc.l	71680		;size
 		dc.w	0		;flags
 		dc.w	8		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	224		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf1a		dc.l	.cf1b		;next
 		dc.l	41152		;size
 		dc.w	0		;flags
 		dc.w	4		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	256		;height
 		dc.w	32		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf1b		dc.l	.cf2f		;next
 		dc.l	51464		;size
 		dc.w	0		;flags
 		dc.w	5		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	256		;height
 		dc.w	64		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf2f		dc.l	.cf2e		;next
 		dc.l	40960		;size
 		dc.w	PFFF_EXTCOLS	;flags
 		dc.w	4		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	256		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf2e		dc.l	.cf2d		;next
 		dc.l	53760		;size
 		dc.w	PFFF_EXTCOLS	;flags
 		dc.w	4		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	336		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf2d		dc.l	.cf2c		;next
 		dc.l	67200		;size
 		dc.w	PFFF_EXTCOLS	;flags
 		dc.w	5		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	336		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf2c		dc.l	.cf2b		;next
 		dc.l	53920		;size
 		dc.w	PFFF_EXTCOLS	;flags
 		dc.w	4		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	337		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf2b		dc.l	.cf2a		;next
 		dc.l	36000		;size
 		dc.w	PFFF_EXTCOLS	;flags
 		dc.w	3		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	300		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf2a		dc.l	.cf2		;next
 		dc.l	51400		;size
 		dc.w	PFFF_EXTCOLS	;flags
 		dc.w	5		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	257		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .cf2		dc.l	.dsa2		;next
 		dc.l	41120		;size
 		dc.w	PFFF_EXTCOLS	;flags
 		dc.w	4		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	257		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 
 .dsa2		dc.l	.dsa		;next
 		dc.l	46400		;size
 		dc.w	0	;flags
 		dc.w	4		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	290		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .dsa		dc.l	.beast2		;next
 		dc.l	48000		;size
 		dc.w	PFFF_INLEAV	;flags
 		dc.w	6		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	200		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 	;Shadow of the beast
 .beast2		dc.l	.beast		;next
 		dc.l	24000		;size
 		dc.w	0		;flags
 		dc.w	3		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	200		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .beast		dc.l	.rc2		;next
 		dc.l	40000		;size
 		dc.w	0		;flags
 		dc.w	5		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	200		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 	;Robocop 2
 .rc2		dc.l	.rc2_f		;next
 		dc.l	42368		;size
 		dc.w	PFFF_OWNCOLS|PFFF_HAM	;flags
 		dc.w	6		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	176		;height
 		dc.w	128		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .rc2_f		dc.l	.rc2_small	;next
 		dc.l	61568		;size
 		dc.w	PFFF_OWNCOLS|PFFF_HAM	;flags
 		dc.w	6		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	256		;height
 		dc.w	128		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 .rc2_small	dc.l	.rc3		;next
 		dc.l	32034		;size
 		dc.w	PFFF_OWNCOLS	;flags
 	;	dc.w	PFFF_OWNCOLS|PFFF_HAM	;flags
 		dc.w	4		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	200		;height
 		dc.w	34		;offset pic
-		dc.w	2		;offset cols
+		dc.l	2		;offset cols
 	;Robocop 3
 .rc3		dc.l	.wip		;next
 		dc.l	32032		;size
 		dc.w	PFFF_OWNCOLS|PFFF_INLEAV	;flags
 		dc.w	4		;depth
-		dc.w	320		;witdh
+		dc.w	320		;width
 		dc.w	200		;height
 		dc.w	32		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 	;XYMOX WindItUp
 .wip		dc.l	.pn		;next
 		dc.l	70400		;size
 		dc.w	0		;flags
 		dc.w	4		;depth
-		dc.w	640		;witdh
+		dc.w	640		;width
 		dc.w	220		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 	;Poker Nights
-.pn		dc.l	0		;next
+.pn		dc.l	.pn2		;next
 		dc.l	34848		;size
 		dc.w	PFFF_HAM|PFFF_FIXCOLS	;flags
 		dc.w	6		;depth
-		dc.w	192		;witdh
+		dc.w	192		;width
 		dc.w	242		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 		dl	.pn_cols
 .pn_cols	dl	$00000333,$07400555,$0A600D00,$0B700888
 		dl	$0F00011F,$0AAA0F95,$0FB70FF0,$0DDD0FFF
+.pn2		dc.l	.pn3		;next
+		dc.l	149280		;size
+		dc.w	PFFF_OWNCOLS	;flags
+		dc.w	4		;depth
+		dc.w	848		;width
+		dc.w	352		;height
+		dc.w	0		;offset pic
+		dc.l	352*848/2	;offset cols
+.pn3		dc.l	.pn4		;next
+		dc.l	1728		;size
+		dc.w	PFFF_FIXCOLS	;flags
+		dc.w	4		;depth
+		dc.w	96		;width
+		dc.w	36		;height
+		dc.w	0		;offset pic
+		dc.l	0		;offset cols
+		dl	.pn_cols
+.pn4		dc.l	.pn5		;next
+		dc.l	2720		;size
+		dc.w	PFFF_FIXCOLS	;flags
+		dc.w	4		;depth
+		dc.w	64		;width
+		dc.w	85		;height
+		dc.w	0		;offset pic
+		dc.l	0		;offset cols
+		dl	.pn_cols
+.pn5		dc.l	.pn6		;next
+		dc.l	2592		;size
+		dc.w	PFFF_FIXCOLS	;flags
+		dc.w	4		;depth
+		dc.w	96		;width
+		dc.w	36		;height
+		dc.w	0		;offset pic
+		dc.l	0		;offset cols
+		dl	.pn_cols
+.pn6		dc.l	0		;next
+		dc.l	61440		;size
+		dc.w	PFFF_HAM|PFFF_FIXCOLS	;flags
+		dc.w	6		;depth
+		dc.w	320		;width
+		dc.w	256		;height
+		dc.w	0		;offset pic
+		dc.l	0		;offset cols
+		dl	.pn_cols
 
 _picfmtdummy	dc.l	0		;next
 		dc.l	0		;size
 		dc.w	0		;flags
 		dc.w	0		;depth
-		dc.w	0		;witdh
+		dc.w	0		;width
 		dc.w	0		;height
 		dc.w	0		;offset pic
-		dc.w	0		;offset cols
+		dc.l	0		;offset cols
 
 ;##########################################################################
 
@@ -353,7 +398,7 @@ _Main		movem.l	d2/a2/a6,-(a7)
 		move.w	(a0)+,(pf_height,a2)
 		move.w	(a0)+,d0		;color entries count
 		sub.l	(lm_srcptr,LOC),a0
-		move.w	a0,(pf_offsetcols,a2)
+		move.l	a0,(pf_offsetcols,a2)
 		lsl.w	#1,d0
 		add.w	d0,a0
 		move.w	a0,(pf_offsetpic,a2)
@@ -492,7 +537,7 @@ _Main		movem.l	d2/a2/a6,-(a7)
 		btst	d2,d1
 		beq	.nocols
 		move.l	(lm_srcptr,LOC),a1
-		add.w	(pf_offsetcols,a2),a1
+		add.l	(pf_offsetcols,a2),a1
 .nocols		moveq	#1,d2
 		move.w	(pf_depth,a2),d1
 		lsl.w	d1,d2
