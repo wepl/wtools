@@ -2,8 +2,7 @@
 ;  :Program.	DIC.asm
 ;  :Contents.	Disk-Image-Creator
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@whdload.de
-;  :Version.	$Id: DIC.asm 0.22 2004/07/16 09:53:34 wepl Exp wepl $
+;  :Version.	$Id: DIC.asm 0.23 2008/05/08 22:23:37 wepl Exp wepl $
 ;  :History.	15.05.96
 ;		20.06.96 returncode supp.
 ;		01.06.97 _LVOWaitForChar added,  check for interactive terminal added
@@ -23,8 +22,9 @@
 ;		08.05.08 skiptrack fixed for disks containing more than MAXTRACKS tracks
 ;			 (previously higher tracks has been randomly skipped because
 ;			 internal table was too short)
+;		30.03.21 read single sectors if track read fails and trackdisk is
+;			 present and Skip is selected
 ;  :Requires.	OS V37+
-;  :Copyright.	© 1996,1997,1998,1999,2000,2003 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V2.16
 ;  :To Do.
@@ -73,7 +73,7 @@ GL	EQUR	A4		;a4 ptr to Globals
 LOC	EQUR	A5		;a5 for local vars
 
 Version	 = 1
-Revision = 1
+Revision = 2
 
 	IFD BARFLY
 	PURE
@@ -98,7 +98,7 @@ VER	MACRO
 		dc.b	0,"$VER: "
 		VER
 		dc.b	0
-		dc.b	"$Id: DIC.asm 0.22 2004/07/16 09:53:34 wepl Exp wepl $",10,0
+		dc.b	"$Id: DIC.asm 0.23 2008/05/08 22:23:37 wepl Exp wepl $",10,0
 	EVEN
 .start
 
@@ -550,7 +550,7 @@ _LoadDisk	movem.l	d2-d7/a6,-(a7)
 		NALIGNLONG
 		LABEL	lrd_SIZEOF
 
-_ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
+_ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		link	LOC,#lrd_SIZEOF
 		move.l	d0,(lrd_device,LOC)
 		move.l	d1,(lrd_unit,LOC)
@@ -734,6 +734,82 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		st	(lrd_skipall,LOC)
 
 .skip
+	;check for trying to read single sectors
+	;supported by trackdisk.device
+		move.l	(lrd_device,LOC),a0
+		lea	(_tdname),a1
+.tdcmp		cmp.b	(a0)+,(a1)+
+		bne	.tdno
+		tst.b	(a0)
+		bne	.tdcmp
+	;don't know beginning which version supports it
+	;	move.l	(IO_DEVICE,a2),a0
+	;	cmp.w	#47,(LIB_VERSION,a0)
+	;	blo	.tdno
+	;do sector reads
+		move.l	d4,d5				;D5 = bytes per track -> bytes left
+	;for each sector
+.tdloop		clr.b	(IO_ERROR,a2)
+		move.w	#ETD_READ,(IO_COMMAND,a2)
+		move.l	#512,(IO_LENGTH,a2)		;single sector
+		move.l	d2,d0				;actual track
+		addq.l	#1,d0				;one more
+		move.l	d4,d1				;bytes per track
+		move.l	(gl_utilbase,GL),a0
+		jsr	(_LVOUMult32,a0)
+		sub.l	d5,d0				;bytes left
+		move.l	d0,(IO_OFFSET,a2)		;begin at disk (offset)
+
+	IFEQ 1
+	;print actual offset
+	move.l	d0,-(a7)
+	lea	.1,a0
+	move.l	a7,a1
+	bsr	_PrintArgs
+	move.l	(a7)+,d0
+	bra	.2
+.1	db	"%ld",10,0,0
+.2
+	ENDC
+
+		add.l	(lrd_buffer,LOC),d0
+		move.l	d0,(IO_DATA,a2)			;dest buf
+		move.l	a2,a1
+		move.l	(gl_execbase,GL),a6
+		jsr	(_LVODoIO,a6)
+		move.b	(IO_ERROR,a2),d0
+		beq	.tdok
+	;error message for each failed sector
+		move.l	d4,d0				;bytes per track
+		sub.l	d5,d0				;bytes left
+		divu	#512,d0
+		move.l	d0,-(a7)
+		lea	(_badsector),a0
+		move.l	a7,a1
+		bsr	_PrintArgs
+		addq.l	#4,a7
+		move.b	(IO_ERROR,a2),d0
+		lea	(_readdisk),a0
+		bsr	_PrintErrorTD
+	;fill sector data area with pattern "TDIC"
+		move.l	(IO_DATA,a2),a0
+		moveq	#512/4-1,d0
+.tdfill		move.l	#"TDIC",(a0)+
+		dbf	d0,.tdfill
+	;set new changenum for retry if disk changed
+		cmp.b	#TDERR_DiskChanged,(IO_ERROR,a2)
+		bne	.tdnotchg
+		move.l	a2,a1				;ioreq
+		move.w	#TD_CHANGENUM,(IO_COMMAND,a1)
+		jsr	(_LVODoIO,a6)
+		move.l	(IO_ACTUAL,a2),(IOTD_COUNT,a2)
+.tdnotchg
+
+.tdok		sub.w	#512,d5				;bytes left
+		bne	.tdloop
+		bsr	_PrintLn
+		bra	.readok
+.tdno
 	;fill track data area with pattern "TDIC"
 		move.l	d2,d0
 		move.l	d4,d1
@@ -775,7 +851,7 @@ _ReadDisk	movem.l	d2-d3/d7/a2/a6,-(a7)
 		
 .noport		move.l	d7,d0				;return code
 		unlk	LOC
-		movem.l	(a7)+,d2-d3/d7/a2/a6
+		movem.l	(a7)+,_MOVEMREGS
 		rts
 
 ;##########################################################################
@@ -803,6 +879,7 @@ _nodev		dc.b	"device doesn't exist",0
 _baddev		dc.b	"cannot handle this device",0
 _baddevname	dc.b	"specified device must have trailing colon",10,0
 _badsize	dc.b	"illegal argument for SIZE/K",10,0
+_badsector	dc.b	"sector #%ld ",0
 
 ; Operationen
 _readargs	dc.b	"read arguments",0
@@ -815,6 +892,7 @@ _opendevice	dc.b	"open device",0
 ;subsystems
 _dosname	DOSNAME
 _utilname	dc.b	"utility.library",0
+_tdname		dc.b	"trackdisk.device",0
 
 _template	dc.b	"DEVICE"		;name of device (default "DF0:)
 		dc.b	",NAME"			;name of image, implies FD=1 and LD=1
