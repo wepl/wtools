@@ -11,6 +11,7 @@
 ;		15.06.08 cf1 support added
 ;		2019-11-01 support for Poker Nights added
 ;		2020-06-01 pf_offsetcols changed from word to long
+;		2021-11-28 fixed init of aa_inleav, more info output
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -56,7 +57,7 @@ LOC	EQUR	A5		;a5 for local vars
 	BOPT	sa+				;write symbol hunks
 
 VER	MACRO
-		dc.b	"bin2pic 0.7 "
+		dc.b	"bin2pic 0.8 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Bert Jahn"
@@ -74,6 +75,7 @@ VER	MACRO
 		link	GL,#gl_SIZEOF
 		move.l	(4).w,(gl_execbase,GL)
 		clr.l	(gl_rdarray+aa_output,GL)
+		clr.l	(gl_rdarray+aa_inleav,GL)
 
 		move.l	#37,d0
 		lea	(_dosname),a1
@@ -435,14 +437,17 @@ _Main		movem.l	d2/a2/a6,-(a7)
 		beq	.afterfreetmp
 .s2
 		lea	(_format),a0
+		move.l	(pf_offsetcols,a2),-(a7)
+		move.w	(pf_offsetpic,a2),-(a7)
+		move.w	(pf_flags,a2),-(a7)
 		move.w	(pf_depth,a2),-(a7)
 		move.w	(pf_height,a2),-(a7)
 		move.w	(pf_width,a2),-(a7)
 		move.l	(lm_srcsize,LOC),-(a7)
 		move.l	a7,a1
 		bsr	_PrintArgs
-		add.w	#4+2+2+2,a7
-		
+		add.w	#4+2+2+2+2+2+4,a7
+
 	;calc size dest
 	;BODY
 		move.w	(pf_width,a2),d0
@@ -561,12 +566,11 @@ _Main		movem.l	d2/a2/a6,-(a7)
 		move.l	(lm_bodysize,LOC),(a0)+
 		move.l	(lm_srcptr,LOC),a1
 		add.w	(pf_offsetpic,a2),a1
-		moveq	#PFFB_INLEAV,d2
 		move.w	(pf_flags,a2),d1
-		cmp.l	#-1,(gl_rdarray+aa_inleav,GL)
-		bne	.s1
-		bchg	d2,d1
-.s1		btst	d2,d1
+		tst.l	(gl_rdarray+aa_inleav,GL)
+		beq	.s1
+		bchg	#PFFB_INLEAV,d1		;invert flags value
+.s1		btst	#PFFB_INLEAV,d1
 		bne	.inleav
 	;src not interleaved
 		move.w	(pf_height,a2),d0
@@ -682,6 +686,9 @@ _format		dc.b	"filesize = %ld",10
 		dc.b	"width = %d",10
 		dc.b	"height = %d",10
 		dc.b	"depth = %d",10
+		dc.b	"flags = $%x",10
+		dc.b	"offsetpic = $%x",10
+		dc.b	"offsetcols = $%lx",10
 		dc.b	0
 _extcols	dc.b	".pal",0
 
