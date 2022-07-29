@@ -2,7 +2,7 @@
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn, Philippe Muhlheim
-;  :Version.	$Id: SP.asm 1.18 2014/02/20 23:30:59 wepl Exp wepl $
+;  :Version.	$Id: sp.asm 1.19 2014/04/21 13:13:17 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -1192,7 +1192,7 @@ _mem_text	dc.b	"BaseMemSize=$%lx",10,0
 _cop_text	dc.b	"cop1lc=$%lx cop2lc=$%lx",10,0
 _copdump_text	dc.b	"*** copperlist %ld ***",10,0
 _badci_text	dc.b	"bad copper instruction: %8lx",10,0
-_dim_text	dc.b	"using: width=%ld height=%ld depth=%ld",10,0
+_dim_text	dc.b	"using: width=%ld height=%ld depth=%ld (no one must be zero!)",10,0
 _dimcalc_text	dc.b	"calculated: ddfwidth=%ld diwwidth=%ld height=%ld depth=%ld",10,0
 _ddfstrt	dc.b	"ddfstrt",0
 _ddfstop	dc.b	"ddfstop",0
