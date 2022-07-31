@@ -2,7 +2,7 @@
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn, Philippe Muhlheim
-;  :Version.	$Id: sp.asm 1.19 2014/04/21 13:13:17 wepl Exp wepl $
+;  :Version.	$Id: sp.asm 1.20 2022/07/29 20:36:24 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -31,6 +31,7 @@
 ;			 copper disassembler enhanced for ddf*
 ;			 ehb detected flag fixed, was random
 ;			 support for color table offset via bplcon4 added
+;		29.07.22 some more dim output added
 ;  :Requires.	OS V37+
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
@@ -94,7 +95,7 @@ MAXNAMELEN=256
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.12 "
+		dc.b	"SP 1.13 "
 	DOSCMD	"WDate >t:date"
 	INCBIN	"t:date"
 		dc.b	" by Wepl,Psygore"
@@ -566,6 +567,17 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		pea	_dim_text
 		bsr	_pf
 		add.w	#16,a7
+
+		clr	-(a7)
+		move	(lm_widthskip,LOC),-(a7)
+		move.l	(bpl1mod,a3),-(a7)
+		pea	_dim_text2
+		bsr	_pf
+		add.w	#12,a7
+
+		lea	_dim_text3,a0
+		lea	(bplpt,a3),a1
+		bsr	_PrintArgs
 		
 		tst.w	d4
 		beq	.adestfree
@@ -656,7 +668,7 @@ _Main		movem.l	d2-d7/a2-a3/a6,-(a7)
 		subq.w	#1,d1
 		bne	.8
 
-	;adjust bitplane pointer with modulo values an lm_widthskip
+	;adjust bitplane pointer with modulo values and lm_widthskip
 		movem.w	(bpl1mod,a3),d0-d1
 		lea	(bplpt,a3),a0
 		moveq	#4-1,d2
@@ -1193,6 +1205,8 @@ _cop_text	dc.b	"cop1lc=$%lx cop2lc=$%lx",10,0
 _copdump_text	dc.b	"*** copperlist %ld ***",10,0
 _badci_text	dc.b	"bad copper instruction: %8lx",10,0
 _dim_text	dc.b	"using: width=%ld height=%ld depth=%ld (no one must be zero!)",10,0
+_dim_text2	dc.b	"       mod1=$%x mod2=$%x widthskip=$%lx",10,0
+_dim_text3	dc.b	"       pt1=$%lx pt2=$%lx pt3=$%lx pt4=$%lx pt5=$%lx pt6=$%lx pt7=$%lx pt8=$%lx",10,0
 _dimcalc_text	dc.b	"calculated: ddfwidth=%ld diwwidth=%ld height=%ld depth=%ld",10,0
 _ddfstrt	dc.b	"ddfstrt",0
 _ddfstop	dc.b	"ddfstop",0
