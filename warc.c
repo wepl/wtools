@@ -4,27 +4,45 @@
  *
  * 2021-01-20 started
  * 2021-07-14 lha working without XPK files
+ * 2021-10-31 XPK decompression added
  *
  */
 
 #include <stdio.h>
 
 #include <dos/dos.h>
+#include <xpk/xpk.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
+#include <proto/xpkmaster.h>
 
-#define TEMPLATE "Dir/A,Remove/S"
-#define OPT_DIR		0
+#define TEMPLATE "Src/A,Remove/S,TmpDir"
+#define OPT_SRC		0
 #define OPT_REMOVE	1
-#define OPT_COUNT	2
+#define OPT_TMPDIR	2
+#define OPT_COUNT	3
 
 LONG opts[OPT_COUNT];
 STRPTR ext = "lha";
 const char * defcmdlha = "lha -eFrZ3 -Qw a";	// default pack command for lha archives
-const char * deftmppath = "T:warc.tmp";	// default path to store decompressed files
+const char * deftmpdir = "T:warc.tmp";	// default directory to store decompressed files
 BPTR fhunc, fhdec;			// fhs for temporary list files
 int cntdir, cntfile, cntxpk;		// counters directories, files, xpk-files
 int cntsz, cntszxpk, cntszarc;		// size of all files uncompressed, size saved by xpk, saved by archive
+struct Library *XpkBase;		// xpkmaster.library
+
+/*
+ * print dos error
+ * in:
+ * 	op	operation tried to perform
+ * 	obj	object working on
+ *
+ */
+void doserr(const char *op, const char *obj) {
+	char buf[80];
+	snprintf(buf,sizeof(buf),"%s '%s'",op,obj);
+	PrintFault(IoErr(),buf);
+}
 
 /*
  * check if file is encrypted/compressed using XPK
@@ -41,11 +59,11 @@ int checkxpk(const char *name, ULONG size) {
 	// read XPK header
 	fh = Open(name,MODE_OLDFILE);
 	if (!fh) {
-		PrintFault(IoErr(),name);
+		doserr("open",name);
 		return 2;
 	}
 	if (sizeof(buf) != Read(fh,buf,sizeof(buf))) {
-		PrintFault(IoErr(),name);
+		doserr("read",name);
 		Close(fh);
 		return 2;
 	}
@@ -59,28 +77,173 @@ int checkxpk(const char *name, ULONG size) {
 
 /*
  * decrypt/uncompress a file using XPK
+ * the file must be located in the current directory
  * to support multiple times compressed files first uncompress to 
  * memory and write it to temporary directory at the end
  * as last step copy meta data (flags, comment)
+ * in:
+ * 	tmpdir	directory lock to store the decompressed file, if NULL overwrite source
+ * 	fib	FileInfoBlock of file to decompress
+ * 	size	variable to return uncompressed size
  * returns: 0=error 1=success
  */
-int unpackxpk(const char *path, const char *name, ULONG *size) {
-	ULONG buf[4];
-	BPTR fh;
-	fh = Open(name,MODE_OLDFILE);
-	if (!fh) {
-		PrintFault(IoErr(),name);
-		return 0;
+int unpackxpk(BPTR tmpdir, struct FileInfoBlock *fib, ULONG *outlen) {
+	ULONG *in, *out;
+	ULONG outbuflen, inbuflen;
+	const char xpkname[] = XPKNAME;
+	int xpkver = 5;
+	LONG err;
+	char errhead[] = "XPK-unpack failed";
+	BPTR fh, olddir;
+	
+	// open the XPK library
+	if (!XpkBase) {
+		XpkBase = OpenLibrary (xpkname, xpkver);
+		if (!XpkBase) {
+			printf("cannot open %s version %d\n", xpkname, xpkver);
+			return 0;
+		}
 	}
-	if (sizeof(buf) != Read(fh,buf,sizeof(buf))) {
-		PrintFault(IoErr(),name);
-		Close(fh);
-		return 0;
-	}
-	Close(fh);
-	*size = buf[3];
 
-	printf("xpkunpack failed: %s %s %lu\n",path,name,*size);
+	// unpack
+	err = XpkUnpackTags(
+		XPK_InName, fib->fib_FileName,
+		XPK_GetOutBuf, &out,
+		XPK_GetOutLen, outlen,
+		XPK_GetOutBufLen, &outbuflen,
+		TAG_DONE
+	);
+	if (err != XPKERR_OK) {
+		XpkPrintFault(err, errhead);
+		return 0;
+	}
+
+	// check if compressed/encrypted another time
+	while (*outlen >= 16 && out[0] == 'X'<<24|'P'<<16|'K'<<8|'F' && out[1] == *outlen-8) {
+		// unpack
+		in = out;
+		inbuflen = outbuflen;
+		err = XpkUnpackTags(
+			XPK_InBuf, in,
+			XPK_InLen, *outlen,
+			XPK_GetOutBuf, &out,
+			XPK_GetOutLen, outlen,
+			XPK_GetOutBufLen, &outbuflen,
+			TAG_DONE
+		);
+		// free unpacked input file
+		FreeMem(in,inbuflen);
+		// check unpack return code
+		if (err != XPKERR_OK) {
+			XpkPrintFault(err, errhead);
+			return 0;
+		}
+	}
+
+	// change directory if requested
+	if (tmpdir) {
+		olddir = CurrentDir(tmpdir);
+	}
+
+	// write unpacked file
+	err = 0;
+	fh = Open(fib->fib_FileName,MODE_NEWFILE);
+	if (!fh) {
+		doserr("open to write",fib->fib_FileName);
+	} else {
+		if (*outlen != Write(fh,out,*outlen)) {
+			doserr("write",fib->fib_FileName);
+		} else {
+			err = 1;
+		}
+		Close(fh);
+	}
+
+	// set meta data
+	if (err) {
+		if (
+			! SetFileDate(fib->fib_FileName, &fib->fib_Date) ||
+			! SetProtection(fib->fib_FileName, fib->fib_Protection) ||
+			fib->fib_Comment[0] ? ! SetComment(fib->fib_FileName, fib->fib_Comment) : 0
+		) {
+			doserr("set meta data",fib->fib_FileName);
+			err = 0;
+		}
+	}
+
+	// change back directory if requested
+	if (tmpdir) {
+		CurrentDir(olddir);
+	}
+
+	// free buffer
+	FreeMem(out,outbuflen);
+
+	return err;
+}
+
+/*
+ * create parent dir of the given path
+ * in:
+ * 	path	path
+ * returns: 0=error 1=success
+ */
+int createdirparent(const char *path) {
+	char * part, save;
+	BPTR lock;
+
+	part = PathPart(path);
+	if (!part || part == path) {
+		doserr("pathpart",path);		// to get at least a message
+		return 0;
+	}
+	save = *part;
+	*part = 0;
+	if (! (lock = CreateDir(path))) {
+		if (IoErr() != ERROR_DIR_NOT_FOUND) {
+			doserr("create dir",path);
+			return 0;
+		}
+		if (! createdirparent(path)) {
+			// error message done by gettmpdirparent
+			return 0;
+		}
+		// try again
+		if (! (lock = CreateDir(path))) {
+			doserr("create dir",path);
+			return 0;
+		}
+	}
+	UnLock(lock);
+	*part = save;
+	return 1;
+}
+
+/*
+ * create the temporary sub-directory and return a lock of it
+ * if directories above are missing create them also
+ * in:
+ * 	path	path of the dir to create
+ * returns: 0=error lock-to-dir
+ */
+BPTR gettmpdir(const char *path) {
+	char buf[256];
+	BPTR lock;
+
+	snprintf(buf,sizeof(buf),(char*)opts[OPT_TMPDIR]);
+	AddPart(buf,path,sizeof(buf));
+
+	if (lock = Lock(buf,SHARED_LOCK)) return lock;	// should not happen
+	if (lock = CreateDir(buf)) return lock;
+	if (IoErr() == ERROR_DIR_NOT_FOUND) {
+		if (! createdirparent(buf)) {
+			// error message done by createdirparent
+			return 0;
+		}
+		// try again
+		if (lock = CreateDir(buf)) return lock;
+	}
+	doserr("create dir",buf);
 	return 0;
 }
 
@@ -88,10 +251,13 @@ int unpackxpk(const char *path, const char *name, ULONG *size) {
  * recursive function to scan a directory
  * XPK files are decompressed
  * file names are written to fhunc/fhdec
+ * in:
+ * 	path	path name of the current dir
+ * 	dir	directory name in the current dir to scan
  * returns: 0=error 1=success
  */
 int scan(const char *path, const char *dir) {
-	BPTR l, o;
+	BPTR l, o, tmpdir=0;
 	struct FileInfoBlock fib;
 	int rc=0;
 	char newpath[256], name[256];
@@ -104,14 +270,14 @@ int scan(const char *path, const char *dir) {
 	// lock & change directory
 	l = Lock(dir,SHARED_LOCK);
 	if (!l) {
-		PrintFault(IoErr(),dir);
+		doserr("lock",dir);
 		return rc;
 	}
 	o = CurrentDir(l);
 
 	// scan directory
 	if (! Examine(l,&fib)) {
-		PrintFault(IoErr(),dir);
+		doserr("examine",dir);
 	} else {
 		while (ExNext(l,&fib)) {
 			snprintf(name,sizeof(name),newpath);
@@ -133,7 +299,8 @@ int scan(const char *path, const char *dir) {
 						break;
 					case 1:	// compressed
 						cntxpk++;
-						if (! unpackxpk(newpath,fib.fib_FileName,&size)) goto failed;
+						if (! tmpdir && ! (tmpdir = gettmpdir(newpath))) goto failed;
+						if (! unpackxpk(tmpdir,&fib,&size)) goto failed;
 						cntsz += size;
 						cntszxpk += size - fib.fib_Size;
 						printf("filexpk: %s packed=%ld unpacked=%lu\n",name,fib.fib_Size,size);
@@ -145,7 +312,7 @@ int scan(const char *path, const char *dir) {
 			}
 		}
 		if (IoErr() != ERROR_NO_MORE_ENTRIES) {
-			PrintFault(IoErr(),dir);
+			doserr("exnext",dir);
 		} else {
 			rc = 1;
 		}
@@ -156,19 +323,23 @@ int scan(const char *path, const char *dir) {
 	// return to old directory and unlock
 	CurrentDir(o);
 	UnLock(l);
+
+	// free tmpdir
+	if (tmpdir) UnLock(tmpdir);
+
 	return rc;
 }
 
 /*
  * create archive from the given directory
  * the directory must be located in the actual directory!
- * - scan the directory and decompress all xpk files
- *   lha: save to separate path 'deftmppath'
- *   zip: overwrite original files
+ * - scan the directory and decompress all xpk files to 'tmpdir'
  *   preserve file meta data
- * - zip or if there were no xpk files just archive the directory using lha/zip
+ * - if there were no xpk files just archive the directory using lha/zip
  * - if there were xpk files:
- *   lha: create archive via filelist from actual directory and 'deftmppath'
+ *   lha: create archive via filelist from actual directory and 'tmpdir'
+ *   zip: create archive via filelist from actual directory and in a
+ *        second add all files from 'tmpdir'
  */
 int packDir(const STRPTR dirname) {
 	int rc = RETURN_ERROR;
@@ -189,7 +360,7 @@ int packDir(const STRPTR dirname) {
 	// open the directory
 	dir = Lock(dirname,SHARED_LOCK);
 	if (!dir) {
-		PrintFault(IoErr(),dirname);
+		doserr("lock",dirname);
 		return rc;
 	}
 
@@ -205,17 +376,17 @@ int packDir(const STRPTR dirname) {
 		// open filelist for uncompressed files
 		fhunc = Open(listunc,MODE_NEWFILE);
 		if (!fhunc) {
-			PrintFault(IoErr(),listunc);
+			doserr("open",listunc);
 		} else {
 			// put homedir for lha into the file
 			FPuts(fhunc,dirname); FPutC(fhunc,'/'); FPutC(fhunc,'\n');
 			// open filelist for decompressed files
 			fhdec = Open(listdec,MODE_NEWFILE);
 			if (!fhdec) {
-				PrintFault(IoErr(),listdec);
+				doserr("open",listdec);
 			} else {
 				// put homedir for lha into the file
-				FPuts(fhdec,deftmppath); FPutC(fhdec,'/'); FPutC(fhdec,'\n');
+				FPuts(fhdec,(char*)opts[OPT_TMPDIR]); FPutC(fhdec,'/'); FPutC(fhdec,'\n');
 
 				// change to the directory
 				old = CurrentDir(dir);
@@ -266,7 +437,7 @@ int packDir(const STRPTR dirname) {
 	// get archive size for statistics
 	arc = Open(arcname,MODE_OLDFILE);
 	if (! arc) {
-		PrintFault(IoErr(),arcname);
+		doserr("open",arcname);
 		return RETURN_ERROR;
 	}
 	Seek(arc,0,OFFSET_END);
@@ -277,7 +448,7 @@ int packDir(const STRPTR dirname) {
 
 	// delete unpacked XPK files
 	if (cntxpk) {
-		snprintf(cmd,sizeof(cmd),"Delete '%s' Quiet Force All",deftmppath);
+		snprintf(cmd,sizeof(cmd),"Delete '%s' Quiet Force All",(char*)opts[OPT_TMPDIR]);
 		rc = SystemTagList(cmd,NULL);
 		if (rc != RETURN_OK) {
 			printf("deleting unpacked XPK files failed: '%s'\n",cmd);
@@ -297,13 +468,15 @@ int main (void) {
 	int rc = RETURN_FAIL;
 	struct RDArgs *rdargs;
 
+	opts[OPT_TMPDIR] = (ULONG) deftmpdir;
 	rdargs = ReadArgs(TEMPLATE, opts, NULL);
 	if (rdargs == NULL) {
 		PrintFault(IoErr(),NULL);
 	} else {
-		rc = packDir((STRPTR) opts[OPT_DIR]);
+		rc = packDir((STRPTR) opts[OPT_SRC]);
 		FreeArgs(rdargs);
 	}
+	if (XpkBase) { CloseLibrary(XpkBase); }
 	return rc;
 }
 

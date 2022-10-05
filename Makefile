@@ -67,7 +67,7 @@ ASMB=$(ASM)
 ASMO=$(ASM)
 ASMDEF=-d
 ASMOUT=-o
-CC=vc -c99 -g -I. $(CFLAGS) -sc -deps
+CC=vc -c99 -g -I. -Iincludes $(CFLAGS) -sc -deps
 
 else
 
@@ -79,7 +79,7 @@ ASMB=$(ASMBASE) -Fbin
 ASMO=$(ASMBASE) -Fhunk
 ASMDEF=-D
 ASMOUT=-o 
-CC=vc -c99 -g -I. $(CFLAGS) -O2 -size -sc -deps
+CC=vc -c99 -g -I. -Iincludes $(CFLAGS) -O2 -size -sc -deps
 
 endif
 
@@ -100,36 +100,14 @@ LN=vc
 warc: warc.o
 	$(LN) $^ -o $@
 
-HRTmon.data: src/HRTmonV2.s .date | .depend
-	$(ASM) $(ASMOUT)$@ $<
-
-#
-# HRTmon loader
-#
-HRTmon: HRTmon.o assembler.o HRTmonLoad.o
-	$(LN) $^ -o $@
-
-#
-# HRTmon preferences editor
-#
-HRTmonPrefs: HRTmonPrefs.o HRTmonGUI2.o HRTboot.o assembler.o HRTmonLoad.o
-	$(LN) $^ -o $@
-
-all: HRTmonPrefs HRTmon HRTmon.data
+all: warc
 
 # how to create additionally listing files
 %.list: %.s | .depend
 	$(ASM) $(ASMOUT)$(@:.list=.o) -L $@ $<
 
-HRTmon.data.list: src/HRTmonV2.s .date | .depend
-	$(ASM) $(ASMOUT)HRTmon.data -L $@ $<
-
-# check for unused labels
-unused: HRTmon.data.list
-	grep " LAB .* UNUSED" *.list
-
 clean:
-	$(RM) HRTmon HRTmonPrefs HRTmon.data *.o *.list .date .depend
+	$(RM) warc *.o *.list .date .depend
 
 # targets which must always built
 .PHONY: .date all clean unused
