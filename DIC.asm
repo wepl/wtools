@@ -2,7 +2,7 @@
 ;  :Program.	DIC.asm
 ;  :Contents.	Disk-Image-Creator
 ;  :Author.	Bert Jahn
-;  :Version.	$Id: DIC.asm 0.23 2008/05/08 22:23:37 wepl Exp wepl $
+;  :Version.	$Id: DIC.asm 0.24 2021/03/30 10:55:15 wepl Exp wepl $
 ;  :History.	15.05.96
 ;		20.06.96 returncode supp.
 ;		01.06.97 _LVOWaitForChar added,  check for interactive terminal added
@@ -24,6 +24,9 @@
 ;			 internal table was too short)
 ;		30.03.21 read single sectors if track read fails and trackdisk is
 ;			 present and Skip is selected
+;		22.11.22 fix SkipTrack function which got broken in last change
+;			 now single sector reads after error can be performed on all
+;			 devices (not only trackdisk) but not on skipped tracks
 ;  :Requires.	OS V37+
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V2.16
@@ -73,7 +76,7 @@ GL	EQUR	A4		;a4 ptr to Globals
 LOC	EQUR	A5		;a5 for local vars
 
 Version	 = 1
-Revision = 2
+Revision = 3
 
 	IFD BARFLY
 	PURE
@@ -98,7 +101,7 @@ VER	MACRO
 		dc.b	0,"$VER: "
 		VER
 		dc.b	0
-		dc.b	"$Id: DIC.asm 0.23 2008/05/08 22:23:37 wepl Exp wepl $",10,0
+		dc.b	"$Id: DIC.asm 0.24 2021/03/30 10:55:15 wepl Exp wepl $",10,0
 	EVEN
 .start
 
@@ -547,6 +550,7 @@ _LoadDisk	movem.l	d2-d7/a6,-(a7)
 		NAPTR	lrd_msgport
 		NBYTE	lrd_skipall
 		NBYTE	lrd_fatal
+		NBYTE	lrd_trysec
 		NALIGNLONG
 		LABEL	lrd_SIZEOF
 
@@ -556,6 +560,7 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		move.l	d1,(lrd_unit,LOC)
 		move.l	a1,(lrd_buffer,LOC)
 		sf	(lrd_skipall,LOC)
+		sf	(lrd_trysec,LOC)
 		moveq	#0,d7				;D7 = return (false)
 
 		move.l	(gl_execbase,GL),a6		;A6 = execbase
@@ -604,7 +609,20 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		add.l	d2,d3				;D3 = last track
 
 .retry		bsr	_PrintLn
-.loop		lea	(_diskprogress),a0		;output progress
+.loop
+	;check if track should be skipped
+		cmp.l	#MAXTRACKS,d2
+		bhs	.noskip
+		tst.b	(gl_skip,GL,d2.w)
+		bne	.skipbyarg
+.noskip
+	;check for CTRL-C
+		bsr	_CheckBreak
+		tst.l	d0
+		bne	.break
+
+	;print progress
+		lea	(_diskprogress),a0
 		move.l	d3,-(a7)
 		sub.l	d2,(a7)
 		subq.l	#1,(a7)
@@ -612,18 +630,6 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		move.l	a7,a1
 		bsr	_PrintArgs
 		addq.l	#8,a7
-		
-	;check for CTRL-C
-		bsr	_CheckBreak
-		tst.l	d0
-		bne	.break
-		
-	;check if track should be skipped
-		cmp.l	#MAXTRACKS,d2
-		bhs	.noskip
-		tst.b	(gl_skip,GL,d2.w)
-		bne	.skip
-.noskip
 
 	;read the track
 		clr.b	(IO_ERROR,a2)
@@ -693,6 +699,8 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 
 .asklong	tst.b	(lrd_skipall,LOC)
 		bne	.skip
+		tst.b	(lrd_trysec,LOC)
+		bne	.trysec
 
 		lea	(_trylong),a0
 		bsr	_Print
@@ -707,6 +715,8 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		cmp.b	#"S",d0
 		beq	.waitend
 		cmp.b	#"A",d0
+		beq	.waitend
+		cmp.b	#"T",d0
 		beq	.waitend
 		cmp.b	#"Q",d0
 		beq	.waitend
@@ -730,23 +740,11 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		beq	.skip
 		cmp.b	#"Q",d0
 		beq	.break
-	;skip all errors
-		st	(lrd_skipall,LOC)
+		cmp.b	#"A",d0
+		beq	.skipall
 
-.skip
-	;check for trying to read single sectors
-	;supported by trackdisk.device
-		move.l	(lrd_device,LOC),a0
-		lea	(_tdname),a1
-.tdcmp		cmp.b	(a0)+,(a1)+
-		bne	.tdno
-		tst.b	(a0)
-		bne	.tdcmp
-	;don't know beginning which version supports it
-	;	move.l	(IO_DEVICE,a2),a0
-	;	cmp.w	#47,(LIB_VERSION,a0)
-	;	blo	.tdno
-	;do sector reads
+.trysec		st	(lrd_trysec,LOC)
+	;try reading single sectors
 		move.l	d4,d5				;D5 = bytes per track -> bytes left
 	;for each sector
 .tdloop		clr.b	(IO_ERROR,a2)
@@ -809,7 +807,12 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		bne	.tdloop
 		bsr	_PrintLn
 		bra	.readok
-.tdno
+
+	;skip all errors
+.skipall	st	(lrd_skipall,LOC)
+	;skip this track
+.skip		bsr	_PrintLn
+.skipbyarg
 	;fill track data area with pattern "TDIC"
 		move.l	d2,d0
 		move.l	d4,d1
@@ -822,14 +825,15 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 .fill		move.l	#"TDIC",(a0)+
 		subq.l	#1,d0
 		bne	.fill
-		bsr	_PrintLn
 		
 	;next track
 .readok		addq.l	#1,d2
 		cmp.l	d2,d3
 		bne	.loop
 
-		bsr	_PrintLn
+		lea	(_lineback),a0
+		bsr	_Print
+		
 		moveq	#-1,d7
 .break
 
@@ -858,7 +862,7 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 
 _defdev		dc.b	"DF0:",0
 _insdisk	dc.b	10,"Insert disk %ld into drive %s and press RETURN (^C to cancel) ...",0
-_trylong	dc.b	"Retry/Skip/skip All/Quit (r/s/a/Q): ",0
+_trylong	dc.b	"Retry/Skip/skip All/Try sectors/Quit (r/s/a/t/Q): ",0
 _tryshort	dc.b	"Retry/Quit (r/Q): ",0
 _filefmt	dc.b	"Disk.%ld",0
 _txt_badtracks	dc.b	"Invalid SKIPTRACK/K specification",10,0
@@ -870,6 +874,7 @@ _m_savedisk	dc.b	"save disk as ",155,"3m%s ",155,"23m",10,0
 _m_savefile	dc.b	"save file ",155,"3m%s ",155,"23m",10,0
 _diskprogress	dc.b	11,155,"Kreading track %ld left %ld",10,0
 _withsize	dc.b	"limited reading of $%lx=%ld bytes",10,0
+_lineback	dc.b	11,155,"K",0
 
 ; Errors
 _nomem		dc.b	"not enough free store",0
@@ -892,7 +897,6 @@ _opendevice	dc.b	"open device",0
 ;subsystems
 _dosname	DOSNAME
 _utilname	dc.b	"utility.library",0
-_tdname		dc.b	"trackdisk.device",0
 
 _template	dc.b	"DEVICE"		;name of device (default "DF0:)
 		dc.b	",NAME"			;name of image, implies FD=1 and LD=1
