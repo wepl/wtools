@@ -16,11 +16,12 @@
 #include <proto/exec.h>
 #include <proto/xpkmaster.h>
 
-#define TEMPLATE "Src/A,Remove/S,TmpDir"
+#define TEMPLATE "Src/A,Remove/S,TmpDir,Verbose/S"
 #define OPT_SRC		0
 #define OPT_REMOVE	1
 #define OPT_TMPDIR	2
-#define OPT_COUNT	3
+#define OPT_VERBOSE	3
+#define OPT_COUNT	4
 
 LONG opts[OPT_COUNT];
 STRPTR ext = "lha";
@@ -45,6 +46,21 @@ void doserr(const char *op, const char *obj) {
 }
 
 /*
+ * print verbose message
+ * in:
+ * 	msg	format string
+ * 	...	args
+ *
+ */
+void verbose(const char *msg, ...) {
+	if (opts[OPT_VERBOSE]) {
+		va_list args;
+		va_start(args, msg);
+		vprintf(msg, args);
+	}
+}
+
+/*
  * check if file is encrypted/compressed using XPK
  * checks if the file is completely compressed to avoid false
  * detections on disk images for example
@@ -52,7 +68,7 @@ void doserr(const char *op, const char *obj) {
  * returns: 0=not-compressed 1=compresed 2=error
  */
 int checkxpk(const char *name, ULONG size) {
-	ULONG buf[4];
+	ULONG buf[32];
 	BPTR fh;
 	// check for min filesize
 	if (size <= sizeof(buf)) return 0;
@@ -69,7 +85,7 @@ int checkxpk(const char *name, ULONG size) {
 	}
 	Close(fh);
 	if (buf[0] == 'X'<<24|'P'<<16|'K'<<8|'F' && buf[1] == size-8) {
-		// printf("xpk: %s packed=%lu unpacked=%lu\n",name,size,buf[3]);
+		verbose("checkxpk: %s packed=%lu unpacked=%lu\n",name,size,buf[3]);
 		return 1;
 	}
 	return 0;
@@ -285,7 +301,7 @@ int scan(const char *path, const char *dir) {
 			if (fib.fib_DirEntryType >= 0) {
 				// directory
 				cntdir++;
-				printf("dir: %s\n",name);
+				verbose("dir: %s\n",name);
 				if (! scan(newpath,fib.fib_FileName)) goto failed;
 			} else {
 				// file
@@ -294,7 +310,7 @@ int scan(const char *path, const char *dir) {
 				switch (checkxpk(fib.fib_FileName,fib.fib_Size)) {
 					case 0:	// uncompressed
 						cntsz += fib.fib_Size;
-						printf("file: %s size=%ld\n",name,fib.fib_Size);
+						verbose("file: %s size=%ld\n",name,fib.fib_Size);
 						FPuts(fhunc,name); FPutC(fhunc,'\n');
 						break;
 					case 1:	// compressed
@@ -303,7 +319,7 @@ int scan(const char *path, const char *dir) {
 						if (! unpackxpk(tmpdir,&fib,&size)) goto failed;
 						cntsz += size;
 						cntszxpk += size - fib.fib_Size;
-						printf("filexpk: %s packed=%ld unpacked=%lu\n",name,fib.fib_Size,size);
+						verbose("filexpk: %s packed=%ld unpacked=%lu\n",name,fib.fib_Size,size);
 						FPuts(fhdec,name); FPutC(fhdec,'\n');
 						break;
 					case 2:	// error
