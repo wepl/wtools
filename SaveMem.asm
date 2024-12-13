@@ -49,8 +49,7 @@ LOC	EQUR	A5		;a5 for local vars
 
 VER	MACRO
 		dc.b	"SaveMem 1.0 "
-	DOSCMD	"WDate >t:date"
-	INCBIN	"t:date"
+	INCBIN	".date"
 		dc.b	" by Bert Jahn"
 	ENDM
 
@@ -131,7 +130,6 @@ _Main		move.l	(gl_rdarray+rda_size,GL),d0
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	dosio.i
 		Print
 		PrintArgs

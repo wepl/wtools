@@ -28,9 +28,9 @@ BASMOPT=-x+
 BASMOPTDBG=-s1+
 CFLAGS=
 CP=Copy Clone
+DATE=wdate >.date
 MV=Copy
 RM=Delete All
-DATE=wdate >
 
 # on Amiga default=DEBUG
 ifndef DEBUG
@@ -42,12 +42,12 @@ else
 # basm options: -x- = don't use cachefile.library -sa+ = create symbol hunks
 BASMOPT=-x-
 BASMOPTDBG=-sa+
-VASMOPT=-I$(INCLUDEOS3)
+VASMOPT=-I$(INCLUDEOS3) -Isources
 CFLAGS=-I$(INCLUDEOS3)
 CP=cp -p
+DATE=date "+(%d.%m.%Y)" | xargs printf >.date
 MV=mv
 RM=rm -fr
-DATE=date "+(%d.%m.%Y)" | xargs printf >
 VAMOS=vamos -qC68020 -m4096 -s128 --
 
 # on UNIX default=NoDEBUG
@@ -100,20 +100,24 @@ LN=vc
 warc: warc.o
 	$(LN) $^ -o $@
 
-all: warc
+#
+# SaveMem
+#
+SaveMem: SaveMem.asm
+	$(DATE)
+	${ASM} $(ASMOUT)$@ $<
+
+all: warc SaveMem
 
 # how to create additionally listing files
 %.list: %.s | .depend
 	$(ASM) $(ASMOUT)$(@:.list=.o) -L $@ $<
 
 clean:
-	$(RM) warc *.o *.list .date .depend
+	$(RM) warc *.o *.list .date .depend SaveMem
 
 # targets which must always built
-.PHONY: .date all clean unused
-
-.date :
-	$(DATE) $@
+.PHONY: all clean unused
 
 .depend:
 	@mkdir .depend
