@@ -132,7 +132,6 @@ _Main		move.l	(gl_rdarray+rda_size,GL),d0
 
 	INCLUDE	dosio.i
 		Print
-		PrintArgs
 	INCLUDE	error.i
 		PrintErrorDOS
 	INCLUDE	files.i
