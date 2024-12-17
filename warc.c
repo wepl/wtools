@@ -47,7 +47,9 @@ const char * defcmdzip = "zip -RND";	// default pack command for lha archives
 const char * defxcmdzip = "unzip";	// default unpack command for zip archives
 const char * deftmpdir = "T:warc.tmp";	// default directory to store decompressed files
 BPTR fhunc, fhdec;			// filehandles for temporary list files
-int cntdir, cntfile, cntxpk;		// counters for directories, files, xpk-files
+int cntdir;				// count processed directories
+int cntfile;				// count processed files
+int cntxpk;				// count processed/uncompressed xpk-files
 int cntsz, cntszxpk, cntszarc;		// size of all files uncompressed, size saved by xpk, saved by archive
 struct Library *XpkBase;		// xpkmaster.library
 
@@ -65,7 +67,36 @@ void doserr(const char *op, const char *obj) {
 }
 
 /*
- * print verbose message with added newline
+ * print error message with added newline
+ * in:
+ * 	msg	format string
+ * 	...	args
+ *
+ */
+void error(const char *msg, ...) {
+	char buf[80];
+	snprintf(buf, sizeof(buf), "error: %s\n", msg);
+	va_list args;
+	va_start(args, msg);
+	vprintf(buf, args);
+}
+
+/*
+ * print info message with added newline
+ * in:
+ * 	msg	format string
+ * 	...	args
+ *
+ */
+void info(const char *msg, ...) {
+	va_list args;
+	va_start(args, msg);
+	vprintf(msg, args);
+	putchar('\n');
+}
+
+/*
+ * print Verbose/S message with added newline
  * in:
  * 	msg	format string
  * 	...	args
@@ -76,7 +107,7 @@ void verbose(const char *msg, ...) {
 		va_list args;
 		va_start(args, msg);
 		vprintf(msg, args);
-		printf("\n");
+		putchar('\n');
 	}
 }
 
@@ -143,7 +174,7 @@ int unpackxpk(BPTR tmpdir, struct FileInfoBlock *fib, ULONG *outlen) {
 	if (!XpkBase) {
 		XpkBase = OpenLibrary (xpkname, xpkver);
 		if (!XpkBase) {
-			fprintf(stderr ,"cannot open %s version %d\n", xpkname, xpkver);
+			error("cannot open %s version %d", xpkname, xpkver);
 			return 0;
 		}
 	}
@@ -274,8 +305,6 @@ int createdirparent(const char *path) {
 BPTR gettmpdir(const char *path) {
 	char buf[256];
 	BPTR lock;
-
-	verbose("gettmpdir: '%s'", path);
 
 	snprintf(buf,sizeof(buf),(char*)opts[OPT_TMPDIR]);
 	AddPart(buf,path,sizeof(buf));
@@ -410,7 +439,7 @@ int deleteDir(const STRPTR dirname) {
 	snprintf(cmd,sizeof(cmd),"Delete \"%s\" Quiet Force All", dirname);
 	rc = SystemTagList(cmd, NULL);
 	if (rc != RETURN_OK) {
-		fprintf(stderr, "deleting directory failed: '%s'\n",cmd);
+		error("deleting directory failed: '%s'", cmd);
 	}
 	return rc;
 }
@@ -438,8 +467,8 @@ int deleteDirOpt(const STRPTR dirname) {
  *	return code of command
  */
 int system(const STRPTR cmd) {
-	printf("executing '%s'\n",cmd);
-	return SystemTagList(cmd,NULL);
+	info("executing '%s'", cmd);
+	return SystemTagList(cmd, NULL);
 }
 
 /*
@@ -465,7 +494,7 @@ int archiveDir(const STRPTR dirname) {
 
 	// make sure the given directory is located in the current dir
 	if (FilePart(dirname) != dirname) {
-		fprintf(stderr,"archiveDir: '%s' must be directory in the current dir\n",dirname);
+		error("archiveDir: '%s' must be directory in the current dir",dirname);
 		return rc;
 	}
 
@@ -482,7 +511,7 @@ int archiveDir(const STRPTR dirname) {
 	// check if archive already exists
 	arc = Open(arcname,MODE_OLDFILE);
 	if (arc) {
-		printf("archive '%s' already exists\n",arcname);
+		error("archive '%s' already exists", arcname);
 		Close(arc);
 	} else {
 		// open filelist for uncompressed files
@@ -506,11 +535,11 @@ int archiveDir(const STRPTR dirname) {
 				// iterate over all entries in the actual directory
 				cntdir = cntfile = cntxpk = cntsz = cntszxpk = 0;	// counters
 				if (scan(NULL,NULL)) {
-					printf("scanned '%s': dirs=%d files=%d size=%d xpkfiles=%d xpksaved=%d\n",
+					info("scanned '%s': dirs=%d files=%d size=%d xpkfiles=%d xpksaved=%d",
 						dirname,cntdir,cntfile,cntsz,cntxpk,cntszxpk);
 					rc = RETURN_OK;
 				} else {
-					printf("scanning failed!\n");
+					error("scanning failed!");
 				}
 
 				// return directory
@@ -537,13 +566,13 @@ int archiveDir(const STRPTR dirname) {
 	}
 	rc = system(cmd);
 	if (rc != RETURN_OK) {
-		printf("archiving '%s' failed\n",arcname);
+		error("archiving '%s' failed", arcname);
 		return rc;
 	}
 
 	// delete filelists
-	//DeleteFile(listdec);
-	//DeleteFile(listdir);
+	DeleteFile(listdec);
+	DeleteFile(listunc);
 
 	// get archive size for statistics
 	arc = Open(arcname,MODE_OLDFILE);
@@ -555,7 +584,7 @@ int archiveDir(const STRPTR dirname) {
 	len = Seek(arc,0,OFFSET_BEGINNING);
 	Close(arc);
 	cntszarc = cntsz - len;
-	printf("archive '%s' saved %d bytes\n",arcname,cntszarc);
+	info("archive '%s' saved %d bytes",arcname,cntszarc);
 
 	// delete unpacked XPK files
 	if (cntxpk) {
@@ -593,7 +622,7 @@ int strcasecmp(const char *s1, const char *s2) {
  *	RETURN_OK, RETURN_ERROR
  */
 int unarchive(const STRPTR arcname) {
-	verbose("unarchiving '%s'", arcname);
+	info("unarchiving '%s'", arcname);
 	size_t namelen = strlen(arcname);
 	size_t extlen = strlen(extlha);
 	if (namelen <= extlen) return RETURN_ERROR;
@@ -630,7 +659,7 @@ int unarchive(const STRPTR arcname) {
 	UnLock(dir);
 	// return
 	if (rc != RETURN_OK) {
-		fprintf(stderr, "unarchiving failed: '%s'\n",cmd);
+		error("unarchiving failed: '%s'",cmd);
 		deleteDir(data);
 	}
 	return rc;
@@ -654,7 +683,7 @@ void NewList(struct MinList *lh)
  * out:
  *	0=hasn't <>0=has
  */
-int cmpExt(const STRPTR name, const STRPTR ext) {
+int cmpExt(const char *name, const char *ext) {
 	size_t namelen = strlen(name);
 	size_t extlen = strlen(ext);
 	if (namelen > extlen && strcasecmp(name+namelen-extlen, ext) == 0) {
@@ -671,7 +700,7 @@ int cmpExt(const STRPTR name, const STRPTR ext) {
  * out:
  *	0=hasn't <>0=has
  */
-int cmpExtArc(const STRPTR name) {
+int cmpExtArc(const char *name) {
 	if (cmpExt(name, extlha) || cmpExt(name, extzip)) {
 		return 1;
 	} else {
@@ -694,7 +723,7 @@ int cmpExtArc(const STRPTR name) {
  */
 int processIcon(const STRPTR name, struct MinList *list) {
 	verbose("processIcon: '%s'", name);
-	fprintf(stderr,"processIcon: not implemented\n");
+	error("processIcon: not implemented");
 	return RETURN_ERROR;
 }
 
@@ -708,7 +737,7 @@ int processIcon(const STRPTR name, struct MinList *list) {
  */
 int scanDir(const STRPTR dirname) {
 	verbose("scanDir: '%s'", dirname);
-	fprintf(stderr,"scanDir: not implemented\n");
+	error("scanDir: not implemented");
 	return RETURN_ERROR;
 }
 
@@ -729,7 +758,7 @@ int main (void) {
 		BPTR lock;
 		if ((lock = Lock((char*)opts[OPT_TMPDIR], SHARED_LOCK)) != 0) {
 			UnLock(lock);
-			fprintf(stderr, "error: TmpDir '%s' already exists!\n", (char*)opts[OPT_TMPDIR]);
+			error("TmpDir '%s' already exists!", (char*)opts[OPT_TMPDIR]);
 		} else {
 			// check if Src is directory or file
 			char *src = (char*) opts[OPT_SRC];
@@ -777,7 +806,7 @@ int main (void) {
 							for ( node = list.mlh_Head ; node->mln_Succ != NULL ; node = node->mln_Succ )
 								FreeVec(node);
 						} else {
-							fprintf(stderr, "error: invalid file '%s', must be archive or icon\n", src);
+							error("invalid file '%s', must be an archive or icon", src);
 						}
 					}
 					// return to initial directory
