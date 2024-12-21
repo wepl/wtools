@@ -67,7 +67,8 @@ ASMB=$(ASM)
 ASMO=$(ASM)
 ASMDEF=-d
 ASMOUT=-o
-CC=vc -c99 -g -I. -Iincludes $(CFLAGS) -sc -deps
+CC=vc -g -Iincludes $(CFLAGS) -sc -deps
+LN=vc -g
 
 else
 
@@ -79,12 +80,10 @@ ASMB=$(ASMBASE) -Fbin
 ASMO=$(ASMBASE) -Fhunk
 ASMDEF=-D
 ASMOUT=-o 
-CC=vc -c99 -g -I. -Iincludes $(CFLAGS) -O2 -size -sc -deps
+CC=vc -Iincludes $(CFLAGS) -O2 -size -sc -deps
+LN=vc
 
 endif
-
-# general programs
-LN=vc
 
 # objects and depend files are always created together
 %.o: %.s | .depend
