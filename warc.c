@@ -12,9 +12,18 @@
  *	if Scan/S is set search this directory for WHDLoad icons and create archives
  *	if Scan/S and UnArc/S is set search this directory for WHDLoad icons and unarchive
  *
+ * only files are archived, no directories, that way empty directories are not
+ * restored while UnArc/S is used, but this is no problem when using SavePath/K with
+ * WHDLoad
+ *
+ * for best performance the following commands should be made Resident:
+ * 	delete
+ * lha claims to be reentrant but fails in version 2.15
+ *
  * 2021-01-20 started
  * 2021-07-14 lha working without XPK files
  * 2021-10-31 XPK decompression added
+ * 2024-12-22 final for xmas 2024
  *
  */
 
@@ -48,9 +57,9 @@ LONG opts[OPT_COUNT];
 const char * extlha = ".lha";
 const char * extzip = ".zip";
 const char * extinfo = ".info";
-const char * defcmdlha = "lha -eFrYZ3 -Qw a";	// default pack command for lha archives
-const char * defxcmdlha = "lha -CF -Qa x";	// default unpack command for lha archives
-const char * defcmdzip = "zip -RND";	// default pack command for lha archives
+const char * defcmdlha = "lha -rNYZ3 -Qa -Qo -Qw a";	// default pack command for lha archives
+const char * defxcmdlha = "lha -aN -Qa x";	// default unpack command for lha archives
+const char * defcmdzip = "zip -RND";	// default pack command for zip archives
 const char * defxcmdzip = "unzip";	// default unpack command for zip archives
 const char * deftmpdir = "T:warc.tmp";	// default directory to store decompressed files
 int cntwhd = 0;				// count WHDLoad icons encountered
@@ -59,6 +68,8 @@ int cntupdicon = 0;			// count of icons updated
 int cntdir = 0;				// count processed directories
 int cntfile = 0;			// count processed files
 int cntxpk = 0;				// count xpk-files
+int cntarchived = 0;			// count archives created
+int cntunarchived = 0;			// count archives extracted
 int cntsz = 0;				// file size sum of files archived
 int cntszarc = 0;			// file size sum of archives created
 int cntarcdir;				// archive: count processed directories
@@ -68,6 +79,25 @@ int cntarcsz;				// archive: file size sum to archive
 int cntarcxpkdiff;			// archive: file size saved due xpk before archiving
 struct Library *XpkBase = NULL;		// xpkmaster.library
 struct Library *IconBase = NULL;	// icon.library
+
+/*
+ * disable vbcc Ctrl-C handling
+ */
+void _chkabort(void) { }
+
+/*
+ * check for Ctrl-C
+ * out:
+ * 	1 if Ctrl-C was pressed
+ *
+ */
+int checkbreak(void) {
+	if (CheckSignal(SIGBREAKF_CTRL_C)) {
+		fprintf(stderr, "*** Break\n");
+		return 1;
+	}
+	return 0;
+}
 
 /*
  * print dos error
@@ -155,7 +185,7 @@ int checkxpk(const char *name, ULONG size) {
 		return 2;
 	}
 	Close(fh);
-	if (buf[0] == 'X'<<24|'P'<<16|'K'<<8|'F' && buf[1] == size-8) {
+	if (buf[0] == ('X'<<24|'P'<<16|'K'<<8|'F') && buf[1] == size-8) {
 		verbose("checkxpk: '%s' packed=%lu unpacked=%lu",name,size,buf[3]);
 		return 1;
 	}
@@ -178,9 +208,12 @@ int checkxpk(const char *name, ULONG size) {
 int unpackxpk(BPTR tmpdir, struct FileInfoBlock *fib, ULONG *outlen) {
 	ULONG *in, *out;
 	ULONG outbuflen, inbuflen;
-	char errhead[] = "XPK-unpack failed";
 
-	verbose("unpackxpk: '%s'", fib->fib_FileName);
+	char errhead[20+MAXFILENAMELEN];
+	snprintf(errhead, sizeof(errhead), "unpackxpk: '%s'", fib->fib_FileName);
+	verbose(errhead);
+
+	if (checkbreak()) return 0;
 
 	// open the XPK library
 	if (!XpkBase) {
@@ -207,7 +240,7 @@ int unpackxpk(BPTR tmpdir, struct FileInfoBlock *fib, ULONG *outlen) {
 	}
 
 	// check if compressed/encrypted another time
-	while (*outlen >= 16 && out[0] == 'X'<<24|'P'<<16|'K'<<8|'F' && out[1] == *outlen-8) {
+	while (*outlen >= 16 && out[0] == ('X'<<24|'P'<<16|'K'<<8|'F') && out[1] == *outlen-8) {
 		// unpack
 		in = out;
 		inbuflen = outbuflen;
@@ -283,24 +316,25 @@ int createdirparent(const char *path) {
 	char *part, savedchar;
 	BPTR lock;
 
+	// verbose("createdirparent '%s'", path);
+
 	part = PathPart(path);
 	if (!part || part == path) {
-		doserr("pathpart", path);		// to get at least a message
+		doserr("createdirparent pathpart", path);		// to get at least a message
 		return 0;
 	}
 	savedchar = *part;
 	*part = 0;
 	if (! (lock = CreateDir(path))) {
-		if (IoErr() != ERROR_DIR_NOT_FOUND) {
-			doserr("create dir", path);
+		int err = IoErr();
+		if (err != ERROR_DIR_NOT_FOUND && err != ERROR_OBJECT_NOT_FOUND) {
+			doserr("createdirparent create dir", path);
 			return 0;
 		}
-		if (! createdirparent(path)) {
-			return 0;
-		}
+		if (! createdirparent(path)) return 0;
 		// try again
 		if (! (lock = CreateDir(path))) {
-			doserr("create dir", path);
+			doserr("createdirparent create dir 2nd", path);
 			return 0;
 		}
 	}
@@ -329,20 +363,19 @@ BPTR gettmpdir(const char *path) {
 
 	if (lock = Lock(buf, SHARED_LOCK)) return lock;
 	if (lock = CreateDir(buf)) return lock;
-	if (IoErr() == ERROR_DIR_NOT_FOUND) {
-		if (! createdirparent(buf)) {
-			// error message done by createdirparent
-			return 0;
-		}
+	int err = IoErr();
+	if (err == ERROR_DIR_NOT_FOUND || err == ERROR_OBJECT_NOT_FOUND) {
+		// possible error message created by createdirparent
+		if (! createdirparent(buf)) return 0;
 		// try again
 		if (lock = CreateDir(buf)) return lock;
 	}
-	doserr("create dir", buf);
+	doserr("gettmpdir create dir", buf);
 	return 0;
 }
 
 /*
- * print string + new line to file
+ * print quoted string + new line to file
  * in:
  * 	fh	file handle
  * 	text	string to print
@@ -350,8 +383,8 @@ BPTR gettmpdir(const char *path) {
  *	0=error 1=success
  */
 int putline(BPTR fh, const char *txt) {
-	if (FPuts(fh,txt) != 0 || FPutC(fh,'\n') != '\n') {
-		char buffer[256];
+	if (FPrintf(fh, "\"%s\"\n", txt) < 0) {
+		char buffer[MAXPATHNAMELEN];
 		NameFromFH(fh, buffer, sizeof(buffer));
 		doserr("writing filelist", buffer);
 		return 0;
@@ -373,6 +406,8 @@ int archivescan(const char *path, const char *dirname, BPTR fhunc, BPTR fhdec) {
 	int rc=0;		// default = failed
 	char name[MAXPATHNAMELEN];
 	BPTR tmpdir = 0;
+
+	if (checkbreak()) return rc;
 
 	// build new path
 	char newpath[MAXPATHNAMELEN];
@@ -432,7 +467,7 @@ int archivescan(const char *path, const char *dirname, BPTR fhunc, BPTR fhdec) {
 			rc = 1;		// success
 		}
 	}
-	
+
 	failed:		// on error inside ExNext loop
 
 	// return to old directory and unlock
@@ -446,40 +481,6 @@ int archivescan(const char *path, const char *dirname, BPTR fhunc, BPTR fhdec) {
 }
 
 /*
- * delete given directory recursively
- * in:
- * 	dir	directory name to delete
- * out:
- *	0=success >0=error
- */
-int deleteDir(const STRPTR dirname) {
-	int rc;
-	char cmd[256];
-	snprintf(cmd,sizeof(cmd),"Delete \"%s\" Quiet Force All", dirname);
-	rc = SystemTagList(cmd, NULL);
-	if (rc != RETURN_OK) {
-		error("deleting directory failed: '%s'", cmd);
-	}
-	return rc;
-}
-
-/*
- * delete given directory recursively only if NoDelete/S is not set
- * in:
- * 	dir	directory name to delete
- * out:
- *	0=success >0=error
- */
-int deleteDirOpt(const STRPTR dirname) {
-	if (opts[OPT_NODELETE]) {
-		return RETURN_OK;
-	} else {
-		verbose("deleting '%s'", dirname);
-		return deleteDir(dirname);
-	}
-}
-
-/*
  * print and execute given command
  * in:
  * 	cmd	command to execute
@@ -487,8 +488,42 @@ int deleteDirOpt(const STRPTR dirname) {
  *	return code of command
  */
 int system(const STRPTR cmd) {
-	info("executing '%s'", cmd);
+	verbose("executing '%s'", cmd);
 	return SystemTagList(cmd, NULL);
+}
+
+/*
+ * delete given file/directory recursively
+ * in:
+ * 	dir	file/directory name to delete
+ * out:
+ *	0=success >0=error
+ */
+int delete(const STRPTR dirname) {
+	int rc;
+	char cmd[256];
+	snprintf(cmd,sizeof(cmd),"Delete \"%s\" Quiet Force All", dirname);
+	rc = system(cmd);
+	if (rc != RETURN_OK) {
+		error("deleting failed: '%s'", cmd);
+	}
+	return rc;
+}
+
+/*
+ * delete given file/directory recursively only if NoDelete/S is not set
+ * in:
+ * 	dir	file/directory name to delete
+ * out:
+ *	0=success >0=error
+ */
+int deleteOpt(const STRPTR dirname) {
+	if (opts[OPT_NODELETE]) {
+		return RETURN_OK;
+	} else {
+		verbose("deleting '%s'", dirname);
+		return delete(dirname);
+	}
 }
 
 /*
@@ -508,6 +543,8 @@ int archive(const STRPTR dirname, char arcname[MAXFILENAMELEN]) {
 	char listdec[] = "T:warc.list.dec";
 
 	info("archiving '%s'", dirname);
+
+	if (checkbreak()) return RETURN_ERROR;
 
 	// make sure the given directory is located in the current dir
 	if (FilePart(dirname) != dirname) {
@@ -537,14 +574,14 @@ int archive(const STRPTR dirname, char arcname[MAXFILENAMELEN]) {
 			doserr("open", listunc);
 		} else {
 			// put homedir for lha into the file
-			FPuts(fhunc, dirname); FPutC(fhunc,'/'); FPutC(fhunc,'\n');
+			FPrintf(fhunc, "\"%s/\"\n", dirname);
 			// open filelist for decompressed files
 			BPTR fhdec = Open(listdec, MODE_NEWFILE);
 			if (!fhdec) {
 				doserr("open", listdec);
 			} else {
 				// put homedir for lha into the file
-				FPuts(fhdec, (char*)opts[OPT_TMPDIR]); FPutC(fhdec, '/'); FPutC(fhdec, '\n');
+				FPrintf(fhdec, "\"%s/\"\n", (char*)opts[OPT_TMPDIR]);
 
 				// change to the directory
 				BPTR olddir = CurrentDir(dir);
@@ -560,7 +597,7 @@ int archive(const STRPTR dirname, char arcname[MAXFILENAMELEN]) {
 					cntsz += cntarcsz;
 					rc = RETURN_OK;
 				} else {
-					error("scanning failed!");
+					error("scan/unpack failed!");
 				}
 
 				// return directory
@@ -578,7 +615,11 @@ int archive(const STRPTR dirname, char arcname[MAXFILENAMELEN]) {
 	UnLock(dir);
 
 	// leave on error
-	if (rc != RETURN_OK) return rc;
+	if (rc != RETURN_OK) {
+		// delete unpacked XPK files
+		if (cntarcxpk) delete((char*)opts[OPT_TMPDIR]);
+		return rc;
+	}
 
 	// create archive
 	char cmd[256];
@@ -587,9 +628,16 @@ int archive(const STRPTR dirname, char arcname[MAXFILENAMELEN]) {
 		snprintf(cmd+cmdlen, sizeof(cmd)-cmdlen, " @%s", listdec);
 	}
 	rc = system(cmd);
+
+	// delete unpacked XPK files
+	if (cntarcxpk) delete((char*)opts[OPT_TMPDIR]);
+
+	// check archive result
 	if (rc != RETURN_OK) {
 		error("archiving '%s' failed", arcname);
 		return rc;
+	} else {
+		cntarchived++;
 	}
 
 	// delete filelists
@@ -606,12 +654,7 @@ int archive(const STRPTR dirname, char arcname[MAXFILENAMELEN]) {
 	int arclen = Seek(arc, 0, OFFSET_BEGINNING);
 	Close(arc);
 	cntszarc += arclen;
-	info("archive '%s' saves %ld bytes", arcname, cntarcsz-arclen);
-
-	// delete unpacked XPK files
-	if (cntxpk) {
-		rc = deleteDir((char*)opts[OPT_TMPDIR]);
-	}
+	info("archive '%s' saved %ld bytes", arcname, cntarcsz-arclen);
 
 	return rc;
 }
@@ -645,7 +688,11 @@ int strcasecmp(const char *s1, const char *s2) {
  *	RETURN_OK, RETURN_ERROR
  */
 int unarchive(const STRPTR arcname, char dirname[MAXFILENAMELEN]) {
+
 	info("unarchiving '%s'", arcname);
+
+	if (checkbreak()) return RETURN_ERROR;
+
 	size_t namelen = strlen(arcname);
 	size_t extlen = strlen(extlha);
 	if (namelen <= extlen) return RETURN_ERROR;
@@ -656,6 +703,7 @@ int unarchive(const STRPTR arcname, char dirname[MAXFILENAMELEN]) {
 	} else if (strcasecmp(arcname+baselen, extzip) == 0) {
 		xcmd = defxcmdzip;
 	} else return RETURN_ERROR;
+
 	// create data directory to store archive content
 	strncpy(dirname, arcname, baselen);
 	dirname[baselen] = 0;
@@ -664,25 +712,32 @@ int unarchive(const STRPTR arcname, char dirname[MAXFILENAMELEN]) {
 		doserr("create dir", dirname);
 		return RETURN_ERROR;
 	}
+
 	// lock from CreateDir is an exclusive lock, SystemTagList cannot dup it
 	if (! ChangeMode(CHANGE_LOCK, dir, ACCESS_READ)) {
 		doserr("change mode lock", dirname);
 		UnLock(dir);
 		return RETURN_ERROR;
 	}
+
 	// enter directory
 	BPTR olddir = CurrentDir(dir);
+
 	// extract
 	char cmd[256];
 	snprintf(cmd, sizeof(cmd), "%s /%s", xcmd, arcname);
 	int rc = system(cmd);
+
 	// return directory
 	CurrentDir(olddir);
 	UnLock(dir);
+
 	// return
 	if (rc != RETURN_OK) {
 		error("unarchiving failed: '%s'",cmd);
-		deleteDir(dirname);
+		delete(dirname);
+	} else {
+		cntunarchived++;
 	}
 	return rc;
 }
@@ -791,25 +846,28 @@ void addData(char *arg, const char *data) {
 }
 
 /*
- * analyse given icon
+ * analyse given icon located in the current directory
  * if DefaultTool is WHDLoad search ToolTypes
  * if ToolType Data is found perform Un/Archive for all data objects not already processed
  * else load Slave and check for slv_CurrentDir, perform Un/Archive if exists
  * processed data objects are remembered in list
  * update/add icons Data ToolType if something has changed
  * in:
- * 	name	name of icon to check, must be located in the actual directory!
+ *	path	NULL or path of current directory for info message if not verbose
+ * 	iconname name of icon to check, must be located in the actual directory!
  * 	list	list of already processed data objects
  * out:
  *	RETURN_OK	all processed successful
  *	RETURN_WARN	file is no icon or not a WHDLoad one
  *	RETURN_ERROR	error ocurred
  */
-int processIcon(const STRPTR iconname, struct MinList *list) {
+int processIcon(const STRPTR path, const STRPTR iconname, struct MinList *list) {
 	struct MinList loclist;		// local list to hold data objects processed here
 	NewList(&loclist);
 
 	verbose("processing icon '%s'", iconname);
+
+	if (checkbreak()) return RETURN_ERROR;
 
 	// open icon.library
 	if (!IconBase) {
@@ -851,7 +909,11 @@ int processIcon(const STRPTR iconname, struct MinList *list) {
 		FreeDiskObject(icon);
 		return RETURN_WARN;
 	}
+
+	// WHDLoad icon found
+	if (path && ! opts[OPT_VERBOSE]) info("checking '%s/%s'", path, iconname);
 	cntwhd++;
+
 	// search Data option
 	const char * ttnamedata = "Data";
 	char * ttdata = FindToolType(icon->do_ToolTypes, ttnamedata);
@@ -1029,7 +1091,7 @@ int processIcon(const STRPTR iconname, struct MinList *list) {
 	) {
 		Remove((struct Node *) node);
 		AddHead((struct List *) list, (struct Node *) node);
-		deleteDirOpt(node->wn_pre);	// rc is ignored, can anyway no handled useful
+		deleteOpt(node->wn_pre);	// rc is ignored, can anyway no handled useful
 	}
 
 	return RETURN_OK;
@@ -1047,7 +1109,7 @@ int processIcon(const STRPTR iconname, struct MinList *list) {
 	) {
 		Remove((struct Node *) node);
 		info("deleting '%s'", node->wn_post);
-		deleteDir(node->wn_post);	// rc is ignored, can anyway no handled useful
+		delete(node->wn_post);	// rc is ignored, can anyway no handled useful
 		FreeVec(node);
 	}
 
@@ -1056,16 +1118,78 @@ int processIcon(const STRPTR iconname, struct MinList *list) {
 
 /*
  * scan given directory recursively for .info files
- * process (un/archive) all found WHDLoad data directories
+ * process (un/archive) all found WHDLoad data archives/directories
  * in:
- * 	dirname	name of directory to scan
+ * 	path	path name of the current dir (initial NULL)
+ * 	dir	directory name in the current dir to scan
  * out:
  *	RETURN_OK, RETURN_ERROR
  */
-int scan(const STRPTR dirname) {
-	verbose("scan: '%s'", dirname);
-	error("scan: not implemented");
-	return RETURN_ERROR;
+int scan(const char *path, const char *dirname) {
+	int rc = RETURN_ERROR;		// default = failed
+	struct MinList list;
+	NewList(&list);
+
+	// build new path
+	char newpath[MAXPATHNAMELEN];
+	snprintf(newpath, sizeof(newpath), path);
+	AddPart(newpath, dirname, sizeof(newpath));
+
+	verbose("scanning: '%s'", newpath);
+
+	// lock & change to directory
+	BPTR dir = Lock(dirname, SHARED_LOCK);
+	if (!dir) {
+		doserr("scan lock dirname", dirname);
+		return RETURN_ERROR;
+	}
+	BPTR olddir = CurrentDir(dir);
+
+	// scan directory
+	struct FileInfoBlock fib;
+	if (! Examine(dir, &fib)) {
+		doserr("scan examine dirname", dirname);
+	} else {
+		while (ExNext(dir, &fib)) {
+			// do we need special handling for links here?
+			if (fib.fib_DirEntryType >= 0) {
+				// directory
+				cntdir++;
+				if (scan(newpath, fib.fib_FileName)) goto failed;
+			} else {
+				// file
+				cntfile++;
+				// check if file is icon
+				if (cmpExt(fib.fib_FileName, extinfo)) {
+					// process icon
+					// no error on RETURN_WARN
+					if (processIcon(newpath, fib.fib_FileName, &list) >= RETURN_ERROR) goto failed;
+				}
+			}
+		}
+		if (IoErr() != ERROR_NO_MORE_ENTRIES) {
+			doserr("scan exnext", dirname);
+		} else {
+			rc = RETURN_OK;		// success
+		}
+	}
+
+	failed:		// on error inside ExNext loop
+
+	// return to old directory and unlock
+	CurrentDir(olddir);
+	UnLock(dir);
+
+	// free list nodes created by processIcon
+	struct MinNode *node, *next;
+	for (	node = list.mlh_Head;
+		(next = node->mln_Succ) != NULL;
+		node = next
+	) {
+		FreeVec(node);
+	}
+
+	return rc;
 }
 
 /*
@@ -1094,30 +1218,33 @@ int main (void) {
 				doserr("open", src);
 			} else {
 				struct FileInfoBlock fib;
-				if (! Examine(lock,&fib)) {
-					doserr("examine",src);
+				if (! Examine(lock, &fib)) {
+					doserr("examine", src);
 					UnLock(lock);
 				} else {
-					// enter parent directory of Src required for file and archive modes
+					// enter parent directory of Src required for un/archive and processIcon
 					BPTR parent = ParentDir(lock);
 					BPTR olddir = CurrentDir(parent);
-					// free the lock because the object may get deleted on success
+					// free the lock because the object gets deleted on un/archive
 					UnLock(lock);
 					// check for dir/file
+					// do we need special handling for links here?
 					if (fib.fib_DirEntryType >= 0) {
 						// directory
 						// scan or archive
 						if (opts[OPT_SCAN]) {
-							// may not relative to current dir!
+							// scan directory
+							// may be not relative to current dir!
 							CurrentDir(olddir);
-							rc = scan(src);
-							info("summary: whdicons=%ld whdnodata=%ld updicon=%ld dirs=%ld files=%ld xpkfiles=%ld",
-								cntwhd, cntwhdnodata, cntupdicon, cntdir, cntfile, cntxpk);
-							info("archived %ld bytes file into %ld bytes archives", cntsz, cntszarc);
+							rc = scan(NULL, src);
+							info("summary: whdicons=%ld whdnodata=%ld updicon=%ld dirs=%ld files=%ld xpkfiles=%ld archived=%ld unarchived=%ld",
+								cntwhd, cntwhdnodata, cntupdicon, cntdir, cntfile, cntxpk, cntarchived, cntunarchived);
+							if (cntarchived) info("archived %ld bytes files into %ld bytes archives, saved %ld", cntsz, cntszarc, cntsz-cntszarc);
 						} else {
+							// archive
 							char arcname[MAXFILENAMELEN];
 							rc = archive(fib.fib_FileName, arcname);
-							if (rc == RETURN_OK) rc = deleteDirOpt(fib.fib_FileName);
+							if (rc == RETURN_OK) rc = deleteOpt(fib.fib_FileName);
 						}
 					} else {
 						// file
@@ -1125,17 +1252,12 @@ int main (void) {
 							// unarchive
 							char dirname[MAXFILENAMELEN];
 							rc = unarchive(fib.fib_FileName, dirname);
-							if (rc == RETURN_OK) {
-								if (! DeleteFile(fib.fib_FileName)) {
-									doserr("delete", fib.fib_FileName);
-									rc = RETURN_WARN;
-								}
-							}
+							if (rc == RETURN_OK) rc = deleteOpt(fib.fib_FileName);
 						} else if (cmpExt(fib.fib_FileName, extinfo)) {
 							// process icon
 							struct MinList list;
 							NewList(&list);
-							rc = processIcon(fib.fib_FileName, &list);
+							rc = processIcon(NULL, fib.fib_FileName, &list);
 							struct MinNode *node, *next;
 							for (	node = list.mlh_Head;
 								(next = node->mln_Succ) != NULL;
