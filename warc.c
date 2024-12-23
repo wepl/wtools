@@ -663,21 +663,16 @@ int archive(const STRPTR dirname, char arcname[MAXFILENAMELEN]) {
  * posix clib
  */
 int strcasecmp(const char *s1, const char *s2) {
-	int offset,ch;
-	unsigned char a,b;
+	int result;
 
-	offset = 0;
-	ch = 0;
-	while( *(s1+offset) != 0 ) {
-		/* check for end of s2 */
-		if ( *(s2+offset)==0) return( *(s1+offset) );
-		a = (unsigned)*(s1+offset);
-		b = (unsigned)*(s2+offset);
-		ch = toupper(a) - toupper(b);
-		if ( ch<0 || ch>0 ) return(ch);
-		offset++;
-	}
-	return(ch);
+	if (s1 == s2) return 0;
+	if (s1 == NULL) return 1;
+	if (s2 == NULL) return -1;
+
+	while ((result = tolower(*s1) - tolower(*s2++)) == 0)
+		if (*s1++ == '\0') break;
+
+	return result;
 }
 
 /*
