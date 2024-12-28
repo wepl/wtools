@@ -94,9 +94,9 @@ endif
 	$(MV) $*.dep .depend/
 
 #
-# warc
+# WArc
 #
-warc: warc.c
+WArc: WArc.c
 	$(CC) -o $@ $<
 
 #
@@ -112,14 +112,14 @@ SaveMem: SaveMem.asm | .depend
 ViewT: ViewT.c
 	$(CC) -o $@ $<
 
-all: warc SaveMem ViewT
+all: SaveMem ViewT WArc
 
 # how to create additionally listing files
 %.list: %.s | .depend
 	$(ASM) $(ASMOUT)$(@:.list=.o) -L $@ $<
 
 clean:
-	$(RM) warc *.o *.list .date .depend SaveMem ViewT
+	$(RM) *.o *.list .date .depend SaveMem ViewT WArc
 
 # targets which must always built
 .PHONY: all clean unused

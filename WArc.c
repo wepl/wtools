@@ -16,6 +16,10 @@
  * restored while UnArc/S is used, but this is no problem when using SavePath/K with
  * WHDLoad
  *
+ * files starting with @ cannot be archived with lha when files are specified
+ * (e.g. game Scrabble), could be supported by switching to specify only parent
+ * directory, but requires a lot of new code
+ *
  * for best performance the following commands should be made Resident:
  * 	delete
  * lha claims to be reentrant but fails in version 2.15
