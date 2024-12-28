@@ -1129,6 +1129,8 @@ int scan(const char *path, const char *dirname) {
 	char newpath[MAXPATHNAMELEN];
 	snprintf(newpath, sizeof(newpath), path);
 	AddPart(newpath, dirname, sizeof(newpath));
+	// remove trailing slash, possible if warc got called with dir and trailing slash
+	char *s = newpath; while (*s++); s -= 2; if (*s == '/') *s = 0;
 
 	verbose("scanning: '%s'", newpath);
 
