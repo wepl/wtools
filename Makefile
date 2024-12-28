@@ -67,7 +67,7 @@ ASMB=$(ASM)
 ASMO=$(ASM)
 ASMDEF=-d
 ASMOUT=-o
-CC=vc -g -Iincludes $(CFLAGS) -sc -deps
+CC=vc -g -Iincludes $(CFLAGS) -sc
 LN=vc -g
 
 else
@@ -80,7 +80,7 @@ ASMB=$(ASMBASE) -Fbin
 ASMO=$(ASMBASE) -Fhunk
 ASMDEF=-D
 ASMOUT=-o 
-CC=vc -Iincludes $(CFLAGS) -O2 -size -sc -deps
+CC=vc -Iincludes $(CFLAGS) -O2 -size -sc
 LN=vc
 
 endif
@@ -90,14 +90,14 @@ endif
 	${ASMO} $(ASMOUT)$@ $<
 
 %.o: %.c | .depend
-	$(CC) -o $@ -c $<
+	$(CC) -deps -o $@ -c $<
 	$(MV) $*.dep .depend/
 
 #
 # warc
 #
-warc: warc.o
-	$(LN) $^ -o $@
+warc: warc.c
+	$(CC) -o $@ $<
 
 #
 # SaveMem
