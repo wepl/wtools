@@ -102,18 +102,24 @@ warc: warc.c
 #
 # SaveMem
 #
-SaveMem: SaveMem.asm
+SaveMem: SaveMem.asm | .depend
 	$(DATE)
 	${ASM} $(ASMOUT)$@ $<
 
-all: warc SaveMem
+#
+# ViewT
+#
+ViewT: ViewT.c
+	$(CC) -o $@ $<
+
+all: warc SaveMem ViewT
 
 # how to create additionally listing files
 %.list: %.s | .depend
 	$(ASM) $(ASMOUT)$(@:.list=.o) -L $@ $<
 
 clean:
-	$(RM) warc *.o *.list .date .depend SaveMem
+	$(RM) warc *.o *.list .date .depend SaveMem ViewT
 
 # targets which must always built
 .PHONY: all clean unused
