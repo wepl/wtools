@@ -46,9 +46,9 @@
 #define MAXFILENAMELEN 108	// dos.library doesn't support more
 #define MAXPATHNAMELEN 256	// dos.library doesn't support more
 
-//static const char USED min_stack[] = "$STACK:20480";
+static const char min_stack[] = "$STACK:20480";
 
-#define TEMPLATE "Src/A,Scan/S,UnArc/S,NoDelete/S,TmpDir/K,Verbose/S"
+#define TEMPLATE "Src,Scan/S,UnArc/S,NoDelete/S,TmpDir/K,Verbose/S"
 #define OPT_SRC		0
 #define OPT_SCAN	1
 #define OPT_UNARC	2
@@ -1205,10 +1205,22 @@ int main (void) {
 	if (rdargs == NULL) {
 		PrintFault(IoErr(),NULL);
 	} else {
-		// check arguments
-		// TmpDir must not already exist
 		BPTR lock;
-		if ((lock = Lock((char*)opts[OPT_TMPDIR], SHARED_LOCK)) != 0) {
+		// check arguments
+		if (opts[OPT_SRC] == 0) {
+			fprintf(stderr,
+				"usage: WArc Src Scan/S UnArc/S NoDelete/S TmpDir/K Verbose/S\n"
+				" Src -	*.info file - un/archive data directories of this icon/slave and update icon\n"
+				"	*.lha file - unarchive to directory of filename and delete archive\n"
+				"	directory - pack this directory into an archive of this name and delete directory\n"
+				" Scan/S - search the Src directory for WHDLoad icons and create archives\n"
+				" UnArc/S - unarchive in combination with Scan/S\n"
+				" NoDelete/S - do not delete archived directories\n"
+				" TmpDir/K - path to temporary directory to store files XPK decompressed\n"
+				" Verbose/S - print more operational messages\n"
+			);
+		// TmpDir must not already exist
+		} else if ((lock = Lock((char*)opts[OPT_TMPDIR], SHARED_LOCK)) != 0) {
 			UnLock(lock);
 			error("TmpDir '%s' already exists!", (char*)opts[OPT_TMPDIR]);
 		} else {
