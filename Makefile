@@ -33,6 +33,7 @@ VASMOPT+=-IIncludes:
 CFLAGS=-IIncludes:
 CP=Copy Clone
 DATE=wdate >.date
+DATEH=echo '\#define DATE "'`wdate`'"' >.date.h
 MV=Copy
 RM=Delete All
 
@@ -49,6 +50,7 @@ VASMOPT+=-I$(INCLUDEOS3)
 CFLAGS=-I$(INCLUDEOS3)
 CP=cp -p
 DATE=date "+(%d.%m.%Y)" | xargs printf >.date
+DATEH=date '+\#define DATE "(%d.%m.%Y)"' >.date.h
 MV=mv
 RM=rm -fr
 VAMOS=vamos -qC68020 -m4096 -s128 --
@@ -100,6 +102,7 @@ endif
 # WArc
 #
 WArc: WArc.c
+	$(DATEH)
 	$(CC) -o $@ $<
 
 #
@@ -122,7 +125,7 @@ all: SaveMem ViewT WArc
 	$(ASM) $(ASMOUT)$(@:.list=.o) -L $@ $<
 
 clean:
-	$(RM) *.o *.list .date .depend SaveMem ViewT WArc
+	$(RM) *.o *.list .date* .depend SaveMem ViewT WArc
 
 # targets which must always built
 .PHONY: all clean unused

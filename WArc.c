@@ -43,10 +43,13 @@
 #include <proto/icon.h>
 #include <proto/xpkmaster.h>
 
+#include ".date.h"
+
 #define MAXFILENAMELEN 108	// dos.library doesn't support more
 #define MAXPATHNAMELEN 256	// dos.library doesn't support more
 
 static const char min_stack[] = "$STACK:20480";
+static const char version[] = "$VER: WArc 1.0 " DATE;
 
 #define TEMPLATE "Src,Scan/S,UnArc/S,NoDelete/S,TmpDir/K,Verbose/S"
 #define OPT_SRC		0
@@ -1209,15 +1212,17 @@ int main (void) {
 		// check arguments
 		if (opts[OPT_SRC] == 0) {
 			fprintf(stderr,
+				"%s\n"
 				"usage: WArc Src Scan/S UnArc/S NoDelete/S TmpDir/K Verbose/S\n"
 				" Src -	*.info file - un/archive data directories of this icon/slave and update icon\n"
 				"	*.lha file - unarchive to directory of filename and delete archive\n"
 				"	directory - pack this directory into an archive of this name and delete directory\n"
-				" Scan/S - search the Src directory for WHDLoad icons and create archives\n"
+				" Scan/S - search the Src directory recursively for WHDLoad icons and create archives\n"
 				" UnArc/S - unarchive in combination with Scan/S\n"
 				" NoDelete/S - do not delete archived directories\n"
 				" TmpDir/K - path to temporary directory to store files XPK decompressed\n"
 				" Verbose/S - print more operational messages\n"
+				, version+6
 			);
 		// TmpDir must not already exist
 		} else if ((lock = Lock((char*)opts[OPT_TMPDIR], SHARED_LOCK)) != 0) {
