@@ -56,7 +56,7 @@ VER	MACRO
 		bra	.start
 		dc.b	"$VER: "
 		VER
-		dc.b	" V37+"
+		dc.b	" V37+",0
 	CNOP 0,2
 .start
 

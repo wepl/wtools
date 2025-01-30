@@ -20,13 +20,17 @@
 #VARS_OLD := $(.VARIABLES)
 #$(foreach v,$(filter-out $(VARS_OLD) VARS_OLD,$(.VARIABLES)),$(info $(v) = $($(v))))
 
+BASMOPT=-isources
+VASMOPT=-Isources
+CC=vc -Iincludes $(CFLAGS) -sc
+
 # different commands for build under Amiga or UNIX
 ifdef AMIGA
 
 # basm options: -x+ = use cachefile.library -s1+ = create SAS/D1 debug hunks
-BASMOPT=-x+
-BASMOPTDBG=-s1+
-CFLAGS=
+BASMOPT+=-x+ -s1+
+VASMOPT+=-IIncludes:
+CFLAGS=-IIncludes:
 CP=Copy Clone
 DATE=wdate >.date
 MV=Copy
@@ -40,9 +44,8 @@ endif
 else
 
 # basm options: -x- = don't use cachefile.library -sa+ = create symbol hunks
-BASMOPT=-x-
-BASMOPTDBG=-sa+
-VASMOPT=-I$(INCLUDEOS3) -Isources
+BASMOPT+=-x- -sa+
+VASMOPT+=-I$(INCLUDEOS3)
 CFLAGS=-I$(INCLUDEOS3)
 CP=cp -p
 DATE=date "+(%d.%m.%Y)" | xargs printf >.date
@@ -62,12 +65,12 @@ ifeq ($(DEBUG),1)
 # Debug options
 # ASM creates executables, ASMB binary files, ASMO object files
 # BASM: -H to show all unused Symbols/Labels, requires -OG-
-ASM=$(VAMOS) basm -v+ $(BASMOPT) $(BASMOPTDBG) -O+ -ODc- -ODd- -wo- -dDEBUG=1
+ASM=$(VAMOS) basm -v+ $(BASMOPT) -O+ -ODc- -ODd- -wo- -dDEBUG=1
 ASMB=$(ASM)
 ASMO=$(ASM)
 ASMDEF=-d
 ASMOUT=-o
-CC=vc -g -Iincludes $(CFLAGS) -sc
+CFLAGS+=-g
 LN=vc -g
 
 else
@@ -80,7 +83,7 @@ ASMB=$(ASMBASE) -Fbin
 ASMO=$(ASMBASE) -Fhunk
 ASMDEF=-D
 ASMOUT=-o 
-CC=vc -Iincludes $(CFLAGS) -O2 -size -sc
+CFLAGS+=-O2 -size
 LN=vc
 
 endif
@@ -128,4 +131,3 @@ clean:
 	@mkdir .depend
 
 include $(wildcard .depend/*)
-
