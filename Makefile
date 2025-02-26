@@ -54,6 +54,7 @@ DATEH=date '+\#define DATE "(%d.%m.%Y)"' >.date.h
 MV=mv
 RM=rm -fr
 VAMOS=vamos -qC68020 -m4096 -s128 --
+GCC=m68k-amigaos-gcc -g -Wall -Ilibrary -I. -O2 -noixemul
 
 # on UNIX default=NoDEBUG
 ifndef DEBUG
@@ -98,7 +99,7 @@ endif
 	$(CC) -deps -o $@ -c $<
 	$(MV) $*.dep .depend/
 
-ALL = CRC16 DIC FindAccess ITD SaveMem ViewT WArc
+ALL = CRC16 DIC FindAccess ITD SaveMem ViewT WArc wcmp
 all: $(ALL)
 
 #
@@ -135,6 +136,13 @@ ITD: ITD.asm | .depend
 WArc: WArc.c
 	$(DATEH)
 	$(CC) -o $@ $<
+
+#
+# wcmp
+# use gcc because vbcc has no unistd.h for getopt()
+#
+wcmp: wcmp.c
+	$(GCC) -o $@ $<
 
 #
 # SaveMem
