@@ -21,7 +21,7 @@
 #$(foreach v,$(filter-out $(VARS_OLD) VARS_OLD,$(.VARIABLES)),$(info $(v) = $($(v))))
 
 BASMOPT=-isources
-VASMOPT=-Isources
+VASMOPT=-Iincludes -Isources
 CC=vc -Iincludes $(CFLAGS) -sc
 
 # different commands for build under Amiga or UNIX
@@ -99,7 +99,7 @@ endif
 	$(CC) -deps -o $@ -c $<
 	$(MV) $*.dep .depend/
 
-ALL = AllocAbs AllocMemReverse bin2pic CRC16 DIC FindAccess FreeAbs ITD Reloc SaveMem ViewT WArc WBuild WDate wcmp
+ALL = AllocAbs AllocMemReverse bin2pic CRC16 DIC FindAccess FreeAbs ITD Reloc SaveMem SP ViewT WArc WBuild WDate wcmp
 all: $(ALL)
 
 #
@@ -197,6 +197,13 @@ WDate: WDate.asm | .depend
 # SaveMem
 #
 SaveMem: SaveMem.asm | .depend
+	$(DATE)
+	${ASM} $(ASMOUT)$@ $<
+
+#
+# SP
+#
+SP: SP.asm | .depend
 	$(DATE)
 	${ASM} $(ASMOUT)$@ $<
 

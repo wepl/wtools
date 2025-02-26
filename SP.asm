@@ -2,7 +2,6 @@
 ;  :Program.	sp.asm
 ;  :Contents.	saves iff picture form dump file created by WHDLoad
 ;  :Author.	Bert Jahn, Philippe Muhlheim
-;  :Version.	$Id: sp.asm 1.20 2022/07/29 20:36:24 wepl Exp wepl $
 ;  :History.	13.07.98 started
 ;		03.08.98 reworked for new dump file
 ;		12.10.98 cskip added
@@ -32,13 +31,13 @@
 ;			 ehb detected flag fixed, was random
 ;			 support for color table offset via bplcon4 added
 ;		29.07.22 some more dim output added
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V37+
 ;  :Language.	68020 Assembler
 ;  :Translator.	Barfly 2.9
 ;---------------------------------------------------------------------------*
 ;##########################################################################
 
-	INCDIR	Includes:
 	INCLUDE	lvo/exec.i
 	INCLUDE	exec/execbase.i
 	INCLUDE	exec/memory.i
@@ -84,21 +83,22 @@ MAXNAMELEN=256
 
 ;##########################################################################
 
+	IFD BARLFY
 	PURE
 	OUTPUT	C:SP
-	SECTION	"",CODE
 	BOPT	O+				;enable optimizing
 	BOPT	OG+				;enable optimizing
 	BOPT	ODd-				;disable mul optimizing
 	BOPT	ODe-				;disable mul optimizing
 	BOPT	sa+				;symbol hunks
+	ENDC
+
 	MC68020
 
 VER	MACRO
-		dc.b	"SP 1.13 "
-	DOSCMD	"WDate >t:date"
-	INCBIN	"t:date"
-		dc.b	" by Wepl,Psygore"
+		dc.b	"SP 1.14 "
+	INCBIN	".date"
+		dc.b	" by Wepl, Psygore"
 	ENDM
 
 		bra	.start
@@ -1176,7 +1176,6 @@ _withargs
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	dosio.i
 		PrintArgs
 		Print
