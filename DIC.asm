@@ -2,7 +2,6 @@
 ;  :Program.	DIC.asm
 ;  :Contents.	Disk-Image-Creator
 ;  :Author.	Bert Jahn
-;  :Version.	$Id: DIC.asm 0.24 2021/03/30 10:55:15 wepl Exp wepl $
 ;  :History.	15.05.96
 ;		20.06.96 returncode supp.
 ;		01.06.97 _LVOWaitForChar added,  check for interactive terminal added
@@ -27,6 +26,7 @@
 ;		22.11.22 fix SkipTrack function which got broken in last change
 ;			 now single sector reads after error can be performed on all
 ;			 devices (not only trackdisk) but not on skipped tracks
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V37+
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V2.16
@@ -76,7 +76,7 @@ GL	EQUR	A4		;a4 ptr to Globals
 LOC	EQUR	A5		;a5 for local vars
 
 Version	 = 1
-Revision = 3
+Revision = 4
 
 	IFD BARFLY
 	PURE
@@ -87,21 +87,15 @@ Revision = 3
 	BOPT	ODe-				;disable mul optimizing
 	ENDC
 
-	IFND	.passchk
-	DOSCMD	"WDate >T:date"
-.passchk
-	ENDC
-
 VER	MACRO
-		sprintx	"DIC %ld.%ld ",Version,Revision
-	INCBIN	"T:date"
+		db	"DIC ","0"+Version,".","0"+Revision," "
+	INCBIN	".date"
 	ENDM
 
 		bra	.start
 		dc.b	0,"$VER: "
 		VER
 		dc.b	0
-		dc.b	"$Id: DIC.asm 0.24 2021/03/30 10:55:15 wepl Exp wepl $",10,0
 	EVEN
 .start
 
@@ -294,7 +288,6 @@ VER	MACRO
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	dosio.i
 		PrintLn
 		PrintArgs
