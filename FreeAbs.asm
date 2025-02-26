@@ -2,9 +2,8 @@
 ;  :Program.	FreeAbs.asm
 ;  :Contents.	free absolut allocated  memory using exec.FreeMem
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@whdload.de
-;  :Version.	$Id: FindAccess.asm 1.2 1999/01/17 14:18:12 jah Exp jah $
 ;  :History.	20.08.2017 created
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -41,18 +40,18 @@ LOC	EQUR	A5		;a5 for local vars
 
 ;##########################################################################
 
+	IFD BARLFY
 	PURE
-	SECTION	"",CODE
 	OUTPUT	C:FreeAbs
 	BOPT	O+				;enable optimizing
 	BOPT	OG+				;enable optimizing
 	BOPT	ODd-				;disable mul optimizing
 	BOPT	ODe-				;disable mul optimizing
+	ENDC
 
 VER	MACRO
-		dc.b	"FreeAbs 1.0 "
-	DOSCMD	"WDate >t:date"
-	INCBIN	"t:date"
+		dc.b	"FreeAbs 1.1 "
+	INCBIN	".date"
 		dc.b	" by Bert Jahn"
 	ENDM
 
@@ -139,7 +138,6 @@ _Main
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	dosio.i
 		Print
 		PrintArgs
