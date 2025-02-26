@@ -98,13 +98,20 @@ endif
 	$(CC) -deps -o $@ -c $<
 	$(MV) $*.dep .depend/
 
-ALL = CRC16 DIC SaveMem ViewT WArc
+ALL = CRC16 DIC FindAccess SaveMem ViewT WArc
 all: $(ALL)
 
 #
 # CRC16
 #
 CRC16: CRC16.asm | .depend
+	$(DATE)
+	${ASM} $(ASMOUT)$@ $<
+
+#
+# FindAccess
+#
+FindAccess: FindAccess.asm | .depend
 	$(DATE)
 	${ASM} $(ASMOUT)$@ $<
 

@@ -2,12 +2,10 @@
 ;  :Program.	FindAccess.asm
 ;  :Contents.	Search for access to a given address
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@kagi.com
-;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
-;  :Version.	$Id: error.i 1.2 1998/12/06 13:42:20 jah Exp $
 ;  :History.	08.02.96
 ;		31.03.97 bug removed, scanning out of range
 ;		17.01.99 recompile because error.i changed
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -45,15 +43,15 @@ LOC	EQUR	A5		;a5 for local vars
 
 ;##########################################################################
 
+	IFD BARLFY
 	PURE
-	SECTION	"",CODE
 	OUTPUT	C:FindAccess
+	ENDC
 
 
 VER	MACRO
-		dc.b	"FindAccess 1.2 "
-	DOSCMD	"WDate >t:date"
-	INCBIN	"t:date"
+		dc.b	"FindAccess 1.3 "
+	INCBIN	".date"
 		dc.b	" by Bert Jahn"
 	ENDM
 
@@ -384,7 +382,6 @@ _FindAccess	movem.l	d2-d7,-(a7)
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	dosio.i
 		CheckBreak
 	INCLUDE	error.i
