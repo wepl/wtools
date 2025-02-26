@@ -2,8 +2,6 @@
 ;  :Program.	Reloc.asm
 ;  :Contents.	relocate exe to absolut address
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@kagi.com
-;  :Version.	$Id: Reloc.asm 0.9 2012/01/07 00:09:17 wepl Exp wepl $
 ;  :History.	11.06.96
 ;		20.06.96 minor
 ;		11.08.96 BUG register d2 not saved in _AdrHunk and _OffHunk
@@ -15,6 +13,7 @@
 ;			 symbol hunks fixed
 ;		06.01.12 missing initialization of aa_failrelocs fixed
 ;		26.01.15 new option CustReloc
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V37+
 ;  :Copyright.	© 1996,1997,1998 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -58,9 +57,10 @@ DEFAULT_ADR	= $400
 
 ;##########################################################################
 
-Version	 = 0
-Revision = 9
+Version	 = 1
+Revision = 0
 
+	IFD BARFLY
 	OUTPUT	C:Reloc
 	PURE
 	BOPT	O+			;enable optimizing
@@ -69,15 +69,11 @@ Revision = 9
 	BOPT	ODd-			;disable muls optimizing
 	BOPT	wo-			;disable optimize warnings
 	;BOPT	sa+			;create symbol hunk
-
-	IFND	.passchk
-	DOSCMD	"WDate >T:date"
-.passchk
 	ENDC
 
 VER	MACRO
-		sprintx	"Reloc %ld.%ld ",Version,Revision
-	INCBIN	"T:date"
+		db	"Reloc ","0"+Version,".","0"+Revision," "
+	INCBIN	".date"
 	ENDM
 
 		bra	.start
@@ -540,7 +536,6 @@ _OffHunk	movem.l	d1-d2/a0,-(a7)
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	dosio.i
 		PrintLn
 		PrintArgs
@@ -582,10 +577,10 @@ _writefile	dc.b	"write file",0
 ;subsystems
 _dosname	dc.b	"dos.library",0
 
-_template	dc.b	"INPUTFILE/A"		;name eines zu ladenden Files
-		dc.b	",OUTPUTFILE"		;savefile name
-		dc.b	",ADR/K"		;to relocate
-		dc.b	",QUIET/S"
+_template	dc.b	"Inputfile/A"		;name eines zu ladenden Files
+		dc.b	",Outputfile"		;savefile name
+		dc.b	",Adr=Address/K"	;to relocate
+		dc.b	",Quiet/S"
 		dc.b	",FailRelocs/S"		;fail if program contains relocations
 		dc.b	",CustReloc/S"		;create a file with custom relocations at the end of file
 		dc.b	0

@@ -99,7 +99,7 @@ endif
 	$(CC) -deps -o $@ -c $<
 	$(MV) $*.dep .depend/
 
-ALL = CRC16 DIC FindAccess ITD SaveMem ViewT WArc wcmp
+ALL = CRC16 DIC FindAccess ITD Reloc SaveMem ViewT WArc wcmp
 all: $(ALL)
 
 #
@@ -127,6 +127,13 @@ FindAccess: FindAccess.asm | .depend
 # ITD
 #
 ITD: ITD.asm | .depend
+	$(DATE)
+	${ASM} $(ASMOUT)$@ $<
+
+#
+# Reloc
+#
+Reloc: Reloc.asm | .depend
 	$(DATE)
 	${ASM} $(ASMOUT)$@ $<
 
