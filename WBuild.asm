@@ -3,10 +3,10 @@
 ;  :Contents.	increases build number in file .build (default name)
 ;		also prints number to stdout (without line feed)
 ;  :Author.	Bert Jahn
-;  :Version.	$Id: WBuild.asm 1.1 2020/01/29 16:02:43 wepl Exp wepl $
 ;  :History.	2020-01-27 converted from Oberon source
 ;			   removed newline from .build file
 ;			   filename can be specified
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -45,19 +45,19 @@ BUFLEN = 16
 
 ;##########################################################################
 
+	IFD BARFLY
 	PURE
-	SECTION	"",CODE
 	OUTPUT	C:WBuild
 	BOPT	O+		;enable optimizing
 	BOPT	OG+		;enable optimizing
 	BOPT	ODd-		;disable mul optimizing
 	BOPT	ODe-		;disable mul optimizing
 	BOPT	wo-		;no optimize warnings
+	ENDC
 
 VER	MACRO
 		dc.b	"WBuild 1.0 "
-	DOSCMD	"WDate >t:date"
-	INCBIN	"t:date"
+	INCBIN	".date"
 		dc.b	" by Bert Jahn"
 	ENDM
 
@@ -186,7 +186,6 @@ _Main		move.l	(gl_rdarray+rda_filename,GL),d1	;name
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	error.i
 		PrintErrorDOS
 	INCLUDE	strings.i
