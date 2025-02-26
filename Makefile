@@ -99,7 +99,7 @@ endif
 	$(CC) -deps -o $@ -c $<
 	$(MV) $*.dep .depend/
 
-ALL = CRC16 DIC FindAccess ITD Reloc SaveMem ViewT WArc WBuild wcmp
+ALL = CRC16 DIC FindAccess ITD Reloc SaveMem ViewT WArc WBuild WDate wcmp
 all: $(ALL)
 
 #
@@ -157,6 +157,13 @@ WBuild: WBuild.asm | .depend
 #
 wcmp: wcmp.c
 	$(GCC) -o $@ $<
+
+#
+# WDate
+#
+WDate: WDate.asm | .depend
+	$(DATE)
+	${ASM} $(ASMOUT)$@ $<
 
 #
 # SaveMem

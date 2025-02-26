@@ -2,11 +2,10 @@
 ;  :Program.	WDate.asm
 ;  :Contents.	Create Date-String for $VER ... INCBIN
 ;  :Author.	Bert Jahn
-;  :EMail.	jah@pub.th-zwickau.de
-;  :Address.	Franz-Liszt-Straße 16, Rudolstadt, 07404, Germany
 ;  :History.	1.0 27-Feb-95
 ;		1.1 07.01.96 format changed (INT -> DOS)
 ;               1.2 05.05.99 format changed, time removed
+;		2025-02-26 imported to wtools
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V1.117
@@ -29,11 +28,9 @@
 		
 ;####################################################################
 
-	PURE				;set pure-bit
 		bra	.start
 		dc.b	"$VER: WDate 1.2 "
-	DOSCMD	"WDate >T:date"
-	INCBIN	"T:date"
+	INCBIN	".date"
 		dc.b	" by Bert Jahn"
 		dc.b	" (Create DateString for $VER using INCBIN)",0
 	EVEN
