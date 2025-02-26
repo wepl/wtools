@@ -2,10 +2,8 @@
 ;  :Program.	CRC16.asm
 ;  :Contents.	calculate CRC16 checksum
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@whdload.de
-;  :Address.	Clara-Zetkin-Straße 52, Zwickau, 08058, Germany
-;  :Version.	$Id: FindAccess.asm 1.2 1999/01/17 14:18:12 jah Exp jah $
 ;  :History.	08.12.03 started
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -45,19 +43,19 @@ LOC	EQUR	A5		;a5 for local vars
 
 ;##########################################################################
 
+	IFD BARLFY
 	PURE
-	SECTION	"",CODE
 	OUTPUT	C:CRC16
 	BOPT	O+		;enable optimizing
 	BOPT	OG+		;enable optimizing
 	BOPT	ODd-		;disable mul optimizing
 	BOPT	ODe-		;disable mul optimizing
 	BOPT	wo-		;no optimize warnings
+	ENDC
 
 VER	MACRO
-		dc.b	"CRC16 1.1 "
-	DOSCMD	"WDate >t:date"
-	INCBIN	"t:date"
+		dc.b	"CRC16 1.2 "
+	INCBIN	".date"
 		dc.b	" by Bert Jahn"
 	ENDM
 
@@ -287,7 +285,6 @@ _CRC16		movem.l	d2-d3,-(a7)
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	error.i
 		PrintErrorDOS
 	INCLUDE	strings.i

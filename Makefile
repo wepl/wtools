@@ -98,6 +98,16 @@ endif
 	$(CC) -deps -o $@ -c $<
 	$(MV) $*.dep .depend/
 
+ALL = CRC16 SaveMem ViewT WArc
+all: $(ALL)
+
+#
+# CRC16
+#
+CRC16: CRC16.asm | .depend
+	$(DATE)
+	${ASM} $(ASMOUT)$@ $<
+
 #
 # WArc
 #
@@ -118,14 +128,13 @@ SaveMem: SaveMem.asm | .depend
 ViewT: ViewT.c
 	$(CC) -o $@ $<
 
-all: SaveMem ViewT WArc
 
 # how to create additionally listing files
 %.list: %.s | .depend
 	$(ASM) $(ASMOUT)$(@:.list=.o) -L $@ $<
 
 clean:
-	$(RM) *.o *.list .date* .depend SaveMem ViewT WArc
+	$(RM) *.o *.list .date* .depend $(ALL)
 
 # targets which must always built
 .PHONY: all clean unused
