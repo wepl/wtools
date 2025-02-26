@@ -2,8 +2,8 @@
 ;  :Program.	AllocMemReverse.asm
 ;  :Contents.	patch exec.AllocMem to always use MEM_REVERSE
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@whdload.de
 ;  :History.	29.08.06 created
+;		2025-02-26 imported to wtools
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V2.9
@@ -25,10 +25,7 @@
 
 		bra	.start
 		dc.b	"$VER: AllocMemReverse 1.0 "
-	IFD BARFLY
-	DOSCMD	"WDate >T:date"
-	INCBIN	"T:date"
-	ENDC
+	INCBIN	".date"
 		dc.b	" by Wepl",0
 	EVEN
 .start

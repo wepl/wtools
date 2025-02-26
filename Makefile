@@ -99,13 +99,20 @@ endif
 	$(CC) -deps -o $@ -c $<
 	$(MV) $*.dep .depend/
 
-ALL = AllocAbs CRC16 DIC FindAccess ITD Reloc SaveMem ViewT WArc WBuild WDate wcmp
+ALL = AllocAbs AllocMemReverse CRC16 DIC FindAccess ITD Reloc SaveMem ViewT WArc WBuild WDate wcmp
 all: $(ALL)
 
 #
 # AllocAbs
 #
 AllocAbs: AllocAbs.asm | .depend
+	$(DATE)
+	${ASM} $(ASMOUT)$@ $<
+
+#
+# AllocMemReverse
+#
+AllocMemReverse: AllocMemReverse.asm | .depend
 	$(DATE)
 	${ASM} $(ASMOUT)$@ $<
 
