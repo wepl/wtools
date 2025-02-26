@@ -2,7 +2,6 @@
 ;  :Program.	ITD.asm
 ;  :Contents.	Image To Disk
 ;  :Author.	Bert Jahn
-;  :Version.	$Id: ITD.asm 0.19 2013/01/07 21:02:35 wepl Exp wepl $
 ;  :History.	29.10.97 start, based on DIC source
 ;		24.11.98 some messages fixed when writing files larger than device
 ;		17.01.99 recompile because error.i changed
@@ -12,6 +11,7 @@
 ;			 correct offset on writing if not starting on block #0
 ;			 async device operation implemented
 ;		12.07.15 no longer checks for dol_Task in _GetDeviceInfo
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V39+
 ;  :Copyright.	© 1997,1998,2012,2013 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
@@ -69,7 +69,7 @@ LOC	EQUR	A5		;a5 for local vars
 CPU	=	68000
 
 Version	 = 1
-Revision = 2
+Revision = 3
 
 	IFD BARFLY
 	PURE
@@ -81,14 +81,9 @@ Revision = 2
 	;BOPT	sa+				;write symbol hunks
 	ENDC
 
-	IFND	.passchk
-	DOSCMD	"WDate >T:date"
-.passchk
-	ENDC
-
 VER	MACRO
-		sprintx	"ITD %ld.%ld ",Version,Revision
-	INCBIN	"T:date"
+		db	"ITD ","0"+Version,".","0"+Revision," "
+	INCBIN	".date"
 	ENDM
 
 		bra	.start
@@ -190,7 +185,6 @@ VER	MACRO
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	dosio.i
 		FlushOutput
 		GetKey
@@ -401,10 +395,14 @@ _Main		link	LOC,#lm_SIZEOF
 		move.l	a7,a1
 		bsr	_PrintArgs
 		add.w	#28+12,a7
-		cmp.l	#MAXTRANSFER,(gl_rd_blocksize,GL)
-		bls	.bslok
+		move.l	#MAXTRANSFER,d0
+		cmp.l	(gl_rd_blocksize,GL),d0
+		bhi	.bslok
 		lea	(_m_blocksize_wl),a0
-		bsr	_Print
+		move.l	d0,-(a7)
+		move.l	a7,a1
+		bsr	_PrintArgs
+		add	#4,a7
 .bslok
 	;calculate start offset
 		move.l	(lm_di+devi_LowCyl,LOC),d0
@@ -880,8 +878,7 @@ _m_writedisk	dc.b	"destination device ",155,"1m%s",155,"22m: (%s %ld)",10
 _m_filesize_wa	dc.b	"WARNING input file size not aligned to device's blocksize (filling up with zeros)",10,0
 _m_blocksize	dc.b	"using blocksize of %s bytes%s",10,0
 _m_blocksize_wa	dc.b	", WARNING blocksize not aligned to device's blocksize",0
-_m_blocksize_wl	sprintx	"WARNING blocksize larger than $%lx bytes, some devices don't support that",MAXTRANSFER
-		dc.b	10,0
+_m_blocksize_wl	dc.b	"WARNING blocksize larger than $%lx bytes, some devices don't support that",10,0
 _m_continue	dc.b	"press 'y' to continue",0
 _diskprogress	dc.b	11,"writing block %lu left %lu  ",10,0
 
