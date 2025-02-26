@@ -2,7 +2,6 @@
 ;  :Program.	bin2pic.asm
 ;  :Contents.	Bin 2 IFF-pic
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl"whdload.de
 ;  :History.	V 0.1 17.10.95
 ;		0.2	13.01.96 anpassung auf macros
 ;		0.3	02.03.96 cf2 support added
@@ -12,6 +11,7 @@
 ;		2019-11-01 support for Poker Nights added
 ;		2020-06-01 pf_offsetcols changed from word to long
 ;		2021-11-28 fixed init of aa_inleav, more info output
+;		2025-02-26 imported to wtools
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
 ;  :Language.	68000 Assembler
@@ -48,6 +48,7 @@ LOC	EQUR	A5		;a5 for local vars
 
 ;##########################################################################
 
+	IFD BARLFY
 	PURE
 	OUTPUT	C:Bin2Pic
 	BOPT	O+				;enable optimizing
@@ -55,11 +56,11 @@ LOC	EQUR	A5		;a5 for local vars
 	BOPT	ODd-				;disable mul optimizing
 	BOPT	ODe-				;disable mul optimizing
 	BOPT	sa+				;write symbol hunks
+	ENDC
 
 VER	MACRO
-		dc.b	"bin2pic 0.8 "
-	DOSCMD	"WDate >t:date"
-	INCBIN	"t:date"
+		dc.b	"bin2pic 0.9 "
+	INCBIN	".date"
 		dc.b	" by Bert Jahn"
 	ENDM
 
@@ -661,7 +662,6 @@ _defcols	dc.w	0,$fff,$ddd,$bbb,$999,$777,$555,$222		;grey
 
 ;##########################################################################
 
-	INCDIR	Sources:
 	INCLUDE	dosio.i
 		PrintLn
 		PrintArgs
