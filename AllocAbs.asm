@@ -2,7 +2,6 @@
 ;  :Program.	AllocAbs.asm
 ;  :Contents.	allocate memory using exec.AllocAbs
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@whdload.de
 ;  :History.	23.10.2003 started
 ;		20.08.2017 basm optimize added
 ;		2025-02-26 imported to wtools

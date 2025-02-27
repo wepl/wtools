@@ -2,7 +2,6 @@
 ;  :Program.	SaveMem.asm
 ;  :Contents.	write memory to a file
 ;  :Author.	Bert Jahn
-;  :EMail.	wepl@whdload.de
 ;  :History.	2024-08-08 created
 ;  :Requires.	OS V37+
 ;  :Copyright.	Public Domain
