@@ -41,6 +41,8 @@ struct WHDLoadSlave
 	UWORD	ws_kickcrc;	/* CRC16 of kickstart image */
 	/* additional structure version 17 */
 	RPTR	ws_config;	/* configuration of splash window buttons */
+	/* additional structure version 20 */
+	RPTR	ws_MemConfig;	/* additional base+exp memory configurations */
 };
 
 #endif	/* WHDLOAD_H */
