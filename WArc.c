@@ -418,7 +418,7 @@ int archivescan(const char *path, const char *dirname, BPTR fhunc, BPTR fhdec) {
 
 	// build new path
 	char newpath[MAXPATHNAMELEN];
-	snprintf(newpath, sizeof(newpath), path);
+	snprintf(newpath, sizeof(newpath), "%s", path);
 	AddPart(newpath, dirname, sizeof(newpath));
 
 	// lock & change to directory
@@ -435,7 +435,7 @@ int archivescan(const char *path, const char *dirname, BPTR fhunc, BPTR fhdec) {
 		doserr("examine", dirname);
 	} else {
 		while (ExNext(dir, &fib)) {
-			snprintf(name, sizeof(name), newpath);
+			snprintf(name, sizeof(name), "%s", newpath);
 			AddPart(name, fib.fib_FileName, sizeof(name));
 			// do we need special handling for links here?
 			if (fib.fib_DirEntryType >= 0) {
@@ -842,9 +842,9 @@ const char * findWork(struct MinList *list, const char *pre) {
  * out:
  *	-
  */
-void addData(char *arg, const char *data) {
-	if (arg[0]) strcat(arg, ",");
-	strcat(arg, data);
+void addData(char *arg, size_t argsize, const char *data) {
+	if (arg[0]) strncat(arg, ",", argsize - strlen(arg) - 1);
+	strncat(arg, data, argsize - strlen(arg) - 1);
 }
 
 /*
@@ -999,7 +999,7 @@ int processIcon(const STRPTR path, const STRPTR iconname, struct MinList *list) 
 		const char *newdataptr = findWork(list, data);
 		if (newdataptr) {
 			// already processed
-			addData(newargdata, newdataptr);
+			addData(newargdata, sizeof(newargdata),newdataptr);
 		} else {
 			// has it an archive extension?
 			if (cmpExtArc(data)) {
@@ -1009,22 +1009,22 @@ int processIcon(const STRPTR path, const STRPTR iconname, struct MinList *list) 
 					char newdata[MAXFILENAMELEN];
 					if (unarchive(data, newdata) != RETURN_OK) goto cleanup;
 					if (! addWork(&loclist, data, newdata)) goto cleanup;
-					addData(newargdata, newdata);
+					addData(newargdata, sizeof(newargdata),newdata);
 				} else {
 					// nothing to do
-					addData(newargdata, data);
+					addData(newargdata, sizeof(newargdata),data);
 				}
 			} else {
 				// is no archive
 				if (opts[OPT_UNARC]) {
 					// nothing to do
-					addData(newargdata, data);
+					addData(newargdata, sizeof(newargdata),data);
 				} else {
 					// archive
 					char newdata[MAXFILENAMELEN];
 					if (archive(data, newdata) != RETURN_OK) goto cleanup;
 					if (! addWork(&loclist, data, newdata)) goto cleanup;
-					addData(newargdata, newdata);
+					addData(newargdata, sizeof(newargdata),newdata);
 				}
 			}
 		}
@@ -1134,7 +1134,7 @@ int scan(const char *path, const char *dirname) {
 
 	// build new path
 	char newpath[MAXPATHNAMELEN];
-	snprintf(newpath, sizeof(newpath), path);
+	snprintf(newpath, sizeof(newpath), "%s", path);
 	AddPart(newpath, dirname, sizeof(newpath));
 	// remove trailing slash, possible if warc got called with dir and trailing slash
 	char *s = newpath; while (*s++); s -= 2; if (*s == '/') *s = 0;
