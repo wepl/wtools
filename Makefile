@@ -20,7 +20,7 @@
 #VARS_OLD := $(.VARIABLES)
 #$(foreach v,$(filter-out $(VARS_OLD) VARS_OLD,$(.VARIABLES)),$(info $(v) = $($(v))))
 
-BASMOPT=-isources
+BASMOPT=-iincludes -isources
 VASMOPT=-Iincludes -Isources
 CC=vc -Iincludes $(CFLAGS) -sc
 
@@ -45,7 +45,7 @@ endif
 else
 
 # basm options: -x- = don't use cachefile.library -sa+ = create symbol hunks
-BASMOPT+=-x- -sa+
+BASMOPT+=-x- -sa+ -iIncludes:
 VASMOPT+=-I$(INCLUDEOS3)
 CFLAGS=-I$(INCLUDEOS3)
 CP=cp -p
@@ -213,16 +213,22 @@ SP: SP.asm | .depend
 ViewT: ViewT.c
 	$(CC) -o $@ $<
 
+#
+# Testing
+#
+test: | .depend
+	${ASM} $(ASMOUT)test/testsnprintf test/testsnprintf.asm
+	vamos test/testsnprintf
 
 # how to create additionally listing files
 %.list: %.s | .depend
 	$(ASM) $(ASMOUT)$(@:.list=.o) -L $@ $<
 
 clean:
-	$(RM) *.o *.list .date* .depend $(ALL)
+	$(RM) *.o *.list .date* .depend $(ALL) test/testsnprintf
 
 # targets which must always built
-.PHONY: all clean unused
+.PHONY: all clean test unused
 
 .depend:
 	@mkdir .depend

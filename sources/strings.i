@@ -22,6 +22,7 @@ STRINGS_I = 1
 ;			 converted to an APTR
 ;		03.08.21 optimized _StrLen
 ;		13.11.23 _StrCaseCmp added
+;		11.02.26 _VSNPrintF add specifier %ll for 64-bit ints
 ;  :Copyright.	All rights reserved.
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly 2.9
@@ -493,8 +494,8 @@ VSNPrintF	MACRO
 VSNPRINTF=1
 
 ; D0-D2 = trash
-; D3	= flags 0=minus 1=null 2=long
-; D4	= argument value
+; D3	= flags 0=minus 1=null 2=long(32-bit) 3=longlong(64-bit)
+; D4	= argument value (high long on 64-bit)
 ; D5.lw	= precision length (post dot)
 ; D5.hw	= field length (pre dot)
 ; D6	= counts chars of created string
@@ -504,16 +505,16 @@ VSNPRINTF=1
 ; A2	= argument array
 ; A3	= trash
 ; A4	= temporary buffer for converted numbers
-; (a7)	= 16 byte temporary string buffer
+; (a7)	= 24 byte temporary string buffer
 
 _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		move.l	d0,d7			;remaining buffer length
 		moveq	#0,d6			;count chars
-		sub.w	#16,a7			;temporary buffer for converted numbers
+		sub.w	#24,a7			;temporary buffer for converted numbers
 		bra	.mainloop
 
 .putcharlast	bsr	.putc
-		add.w	#16,a7
+		add.w	#24,a7
 		move.l	d6,d0
 		movem.l	(sp)+,_MOVEMREGS
 		rts
@@ -537,96 +538,67 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		beq	.putcharlast
 		cmpi.b	#'%',d0
 		bne.b	.mainloop_putc
-		move.l	a7,a4			;a4 = buffer 10 bytes for numbers
+	; check for flags
+		move.l	a7,a4			;a4 = temporary string buffer
 		moveq	#0,d3			;d3 = flags
 		cmpi.b	#'-',(a1)
 		bne.b	.no_minus
-		bset	#0,d3			;bit0=minus
+		bset	#0,d3			;bit0 = minus
 		addq.l	#1,a1
 .no_minus	cmpi.b	#'0',(a1)
 		bne.b	.no_null
-		bset	#1,d3			;bit1=null
-.no_null	bsr.w	.getnumber
+		bset	#1,d3			;bit1 = null
+.no_null	bsr	.getnumber
 		move.l	d0,d5
-		swap	d5			;d5.hw=field width (pre dot)
+		swap	d5			;d5.hw = field width (pre dot)
 		cmpi.b	#'.',(a1)
 		bne.b	.no_dot
 		addq.l	#1,a1
-		bsr.w	.getnumber
-		move.w	d0,d5			;d5.lw=precision (post dot)
+		bsr	.getnumber
+		move.w	d0,d5			;d5.lw = precision (post dot)
 .no_dot		cmpi.b	#'l',(a1)
 		bne.b	.no_l
-		bset	#2,d3			;bit2=l
+		bset	#2,d3			;bit2 = l (32-bit)
 		addq.l	#1,a1
-
+		cmpi.b	#'l',(a1)
+		bne.b	.no_l
+		bset	#3,d3			;bit3 = ll (64-bit)
+		addq.l	#1,a1
+	; check for type
 .no_l		move.b	(a1)+,d0
+	; signed decimal
 		cmpi.b	#'d',d0
-		beq.b	.d
+		beq	.putints
 		cmpi.b	#'D',d0
-		bne.b	.notd
-.d		bsr.b	.getarg_d4
-		bsr.w	.putints
-		bra.w	.putbuffer
-
-.notd		cmpi.b	#'x',d0
-		beq.b	.x
+		beq	.putints
+	; hexadecimal
+		cmpi.b	#'x',d0
+		beq	.putintx
 		cmpi.b	#'X',d0
-		bne.b	.notx
-.x		bsr.b	.getarg_d4
-.xput		bsr.w	.putintx
-		bra.b	.putbuffer
-
-.getarg_d4	btst	#2,d3			;long?
-		bne.b	.getargl_d4
-		move.w	(a2)+,d4
-		ext.l	d4
-		rts
-
-.getargl_d4	move.l	(a2)+,d4
-		rts
-
-.notx		cmpi.b	#'s',d0
-		bne.b	.nots
-		bsr.b	.getargl_d4
-		beq	.mainloop
-		movea.l	d4,a4
-		bra.b	.putbuffera4
-
-.nots		cmpi.b	#'B',d0			;BPTR
-		bne.b	.notbptr
-		bsr.b	.getargl_d4
-		lsl.l	#2,d4			;BPTR -> APTR
-		bset	#2,d3			;flag l
-		bra	.xput
-
-.notbptr	cmpi.b	#'b',d0			;BSTR
-		bne.b	.notbstr
-		bsr.b	.getargl_d4
-		beq	.mainloop
-		lsl.l	#2,d4			;BSTR -> APTR
-		movea.l	d4,a4
-		moveq	#0,d2
-		move.b	(a4)+,d2
-		beq	.mainloop
-		tst.b	(-1,a4,d2.w)
-		bne.b	.putbufferd2
-		subq.w	#1,d2
-		bra.b	.putbufferd2
-
-.notbstr	cmpi.b	#'u',d0
-		beq.b	.u
+		beq	.putintx
+	; string
+		cmpi.b	#'s',d0
+		beq	.puts
+	; BPTR, BCPL pointer
+		cmpi.b	#'B',d0
+		beq	.putbptr
+	; BSTR, BCPL string
+		cmpi.b	#'b',d0
+		beq	.putbstr
+	; unsigned decimal
+		cmpi.b	#'u',d0
+		beq	.putintu
 		cmpi.b	#'U',d0
-		bne.b	.notu
-.u		bsr.b	.getarg_d4
-		bsr.w	.putintu
-		bra.b	.putbuffer
-
+		beq	.putintu
+	; character
 .notu		cmpi.b	#'c',d0
 		bne	.mainloop_putc
-		bsr.b	.getarg_d4
+		bsr	.getarg_d4	;word or long
 		move.b	d4,(a4)+
+	; terminate & copy temporary buffer to output
 .putbuffer	clr.b	(a4)		;terminate string
 		move.l	a7,a4		;rewind
+	; copy a4 buffer to output
 .putbuffera4	movea.l	a4,a3
 		moveq	#-1,d2
 .lenbufloop	tst.b	(a3)+
@@ -650,7 +622,7 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 
 .putbuffer_copy	move.b	(a4)+,d0
 		bsr	.putc
-.putbuffer_cin	dbra	d5,.putbuffer_copy
+.putbuffer_cin	dbf	d5,.putbuffer_copy
 		btst	#0,d3		;flag minus? (left align)
 		beq	.mainloop
 		bsr.b	.align
@@ -671,9 +643,10 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 
 .align_copy	move.b	d2,d0
 		bsr	.putc
-.align_copyin	dbra	d1,.align_copy
+.align_copyin	dbf	d1,.align_copy
 		rts
 
+	; get number from format string to d0
 .getnumber	moveq	#0,d0
 		moveq	#0,d2
 .getnumber_loop	move.b	(a1)+,d2
@@ -681,68 +654,191 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		bcs.b	.getnumber_end
 		cmpi.b	#'9',d2
 		bhi.b	.getnumber_end
-		add.l	d0,d0
+		add.l	d0,d0		;d0 = d0 * 10
 		move.l	d0,d1
 		add.l	d0,d0
 		add.l	d0,d0
 		add.l	d1,d0
 		sub.b	#'0',d2
-		add.l	d2,d0
+		add.l	d2,d0		;add
 		bra.b	.getnumber_loop
 
 .getnumber_end	subq.l	#1,a1
 		rts
 
-.putints	tst.l	d4
-		bpl.b	.putintu
+	; get argument to d4 (16/32/64-bit)
+.getarg_d4	btst	#3,d3			;64-bit?
+		bne.b	.getargll_d4
+		btst	#2,d3			;long?
+		bne.b	.getargl_d4
+		move.w	(a2)+,d4
+		ext.l	d4
+		rts
+	; get 32-bit argument to d4
+.getargl_d4	move.l	(a2)+,d4
+		rts
+	; get 64-bit argument to d4:d0
+.getargll_d4	move.l	(a2)+,d4		;high 32 bits
+		move.l	(a2)+,d0		;low 32 bits
+		rts
+
+	; string
+.puts		bsr.b	.getargl_d4
+		beq	.mainloop
+		movea.l	d4,a4
+		bra.b	.putbuffera4
+
+	; BPTR, BCPL pointer
+.putbptr	bsr.b	.getargl_d4
+		lsl.l	#2,d4			;BPTR -> APTR
+		bset	#2,d3			;flag l
+		bra	.putintx_d4		;print as hexadecimal value
+
+	; BSTR, BCPL string
+.putbstr	bsr.b	.getargl_d4
+		beq	.mainloop
+		lsl.l	#2,d4			;BSTR -> APTR
+		movea.l	d4,a4
+		moveq	#0,d2
+		move.b	(a4)+,d2		;length
+		beq	.mainloop
+		tst.b	(-1,a4,d2.w)		;check if last char is 0
+		bne.b	.putbufferd2
+		subq.w	#1,d2			;skip last char
+		bra.b	.putbufferd2
+
+	; signed decimal
+.putints	bsr.b	.getarg_d4
+		btst	#3,d3			;64-bit?
+		bne.b	.putints64
+		tst.l	d4
+		bpl.b	.putintu_d4
 		move.b	#'-',(a4)+
 		neg.l	d4
-.putintu	moveq	#'0',d0
+		bra.b	.putintu_d4
+
+	; unsigned decimal
+.putintu	bsr.b	.getarg_d4
+		btst	#3,d3			;64-bit?
+		bne.b	.putintu64
+	; d4 unsigned decimal
+.putintu_d4	moveq	#'0',d0
 		lea	(.dectab,pc),a3
 .putint_loop	move.l	(a3)+,d1
 		beq.b	.putint_end
-		moveq	#'/',d2
+		moveq	#'0'-1,d2
 .putint_lp	addq.l	#1,d2
-		sub.l	d1,d4
+		sub.l	d1,d4			;subtract
 		bcc.b	.putint_lp
-		add.l	d1,d4
+		add.l	d1,d4			;add back
 		cmp.l	d0,d2
 		beq.b	.putint_loop
 		moveq	#0,d0
 		move.b	d2,(a4)+
 		bra.b	.putint_loop
 
-.putint_end	moveq	#'0',d0
-		add.b	d0,d4
+.putint_end	add.b	#'0',d4
 		move.b	d4,(a4)+
-		rts
+		bra	.putbuffer
 
-.putintx	tst.l	d4
-		beq.b	.putint_end
-		clr.w	d1			;d1 flag already char written
+	; signed decimal 64-bit d4:d0
+.putints64	tst.l	d4			;negative?
+		bpl.b	.putintu64
+		move.b	#'-',(a4)+
+		neg.l	d0
+		negx.l	d4
+	; unsigned decimal 64-bit d4:d0
+.putintu64	move.l	d5,-(sp)		;save d5 (field width/precision)
+		move.l	d0,d5			;d5 = low 32 bits
+		lea	(.dectab64,pc),a3
+.putint64_loop	move.l	(a3)+,d0		;d0 = high power
+		move.l	(a3)+,d1		;d1 = low power
+		beq.b	.putint64_to32		;end of table
+		moveq	#'0'-1,d2		;digit counter
+.putint64_lp	addq.l	#1,d2
+		sub.l	d1,d5			;subtract low
+		subx.l	d0,d4			;subtract high with borrow
+		bcc.b	.putint64_lp
+		add.l	d1,d5			;add back low
+		addx.l	d0,d4			;add back high
+		cmpi.b	#'0',d2			;leading zero?
+		bne.b	.putint64_nz
+		btst	#4,d3			;any digit written?
+		beq.b	.putint64_loop		;no -> skip
+.putint64_nz	bset	#4,d3			;mark digit written
+		move.b	d2,(a4)+
+		bra.b	.putint64_loop
+	;64-bit table end reached
+.putint64_to32	move.l	d5,d4			;remaining value (< 10^9)
+		bclr	#4,d3			;test+clear "digit written"
+		seq	d0			;d0=$FF if no digits, 0 if digits
+		and.b	#'0',d0			;d0='0' suppress, 0 no suppress
+		move.l	(sp)+,d5		;restore d5
+		lea	(.dectab+4,pc),a3	;start at 10^8 (skip 10^9)
+		bra	.putint_loop
+
+	; hexadecimal
+.putintx	bsr.b	.getarg_d4
+		btst	#3,d3			;64-bit?
+		bne.b	.putintx64
+	; d4 hexadecimal
+.putintx_d4	tst.l	d4
+		beq.b	.putint_end		;only write "0"
+		sf	d1			;d1 = flag already one char written
 		btst	#2,d3			;flag l
 		bne.b	.putintx_l
-		moveq	#3,d2
+		moveq	#3,d2			;4 nibbles
 		swap	d4
 		bra.b	.putintx_loop
-
-.putintx_l	moveq	#7,d2
+.putintx_l	moveq	#7,d2			;8 nibbles
 .putintx_loop	rol.l	#4,d4
 		move.b	d4,d0
-		and.b	#15,d0
+		and.w	#15,d0
 		bne.b	.putintx_write
-		tst.w	d1
+		tst.b	d1			;don't write leading zeros
 		beq.b	.putintx_skip
-.putintx_write	moveq	#-1,d1
-		cmp.b	#9,d0
-		bhi.b	.putintx_alpha
-		add.b	#'0',d0
-		bra.b	.putintx_set
+.putintx_write	st	d1			;char written
+		move.b	(.hextab,pc,d0.w),(a4)+
+.putintx_skip	dbf	d2,.putintx_loop
+		bra	.putbuffer
 
-.putintx_alpha	add.b	#'7',d0
-.putintx_set	move.b	d0,(a4)+
-.putintx_skip	dbra	d2,.putintx_loop
-		rts
+.putintx64_32	move.l	d0,d4
+		bra	.putintx_d4
+	; hexadecimal 64-bit d4:d0
+.putintx64	tst.l	d4
+		beq	.putintx64_32
+		move.l	d0,-(sp)		;save low 32 bits
+	; output high 32 bits, suppress leading zeros
+		sf	d1			;d1 = flag already one char written
+		moveq	#7,d2			;8 nibbles
+.putintxh_loop	rol.l	#4,d4
+		move.b	d4,d0
+		and.w	#15,d0
+		bne.b	.putintxh_write
+		tst.b	d1			;don't write leading zeros
+		beq.b	.putintxh_skip
+.putintxh_write	st	d1			;char written
+		move.b	(.hextab,pc,d0.w),(a4)+
+.putintxh_skip	dbf	d2,.putintxh_loop
+	; output low 32 bits via 32-bit loop (d1=$FF, no zero suppression)
+		move.l	(sp)+,d4
+		bra	.putintx_l
+
+	CNOP 0,4
+.hextab		dc.b	'0123456789ABCDEF'
+
+.dectab64	dc.l	$8AC72304,$89E80000	;10^19
+		dc.l	$0DE0B6B3,$A7640000	;10^18
+		dc.l	$01634578,$5D8A0000	;10^17
+		dc.l	$002386F2,$6FC10000	;10^16
+		dc.l	$00038D7E,$A4C68000	;10^15
+		dc.l	$00005AF3,$107A4000	;10^14
+		dc.l	$00000918,$4E72A000	;10^13
+		dc.l	$000000E8,$D4A51000	;10^12
+		dc.l	$00000017,$4876E800	;10^11
+		dc.l	$00000002,$540BE400	;10^10
+		dc.l	$00000000,$3B9ACA00	;10^9
+		dc.l	0,0			;end of table
 
 .dectab		dc.l	1000000000
 		dc.l	100000000
