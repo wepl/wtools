@@ -23,6 +23,7 @@ STRINGS_I = 1
 ;		03.08.21 optimized _StrLen
 ;		13.11.23 _StrCaseCmp added
 ;		11.02.26 _VSNPrintF add specifier %ll for 64-bit ints
+;		12.02.26 _VSNPrintF add thousands grouping flag '
 ;  :Copyright.	All rights reserved.
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly 2.9
@@ -494,7 +495,7 @@ VSNPrintF	MACRO
 VSNPRINTF=1
 
 ; D0-D2 = trash
-; D3	= flags 0=minus 1=null 2=long(32-bit) 3=longlong(64-bit)
+; D3	= flags 0=minus 1=null 2=long(32-bit) 3=longlong(64-bit) 5=group
 ; D4	= argument value (high long on 64-bit)
 ; D5.lw	= precision length (post dot)
 ; D5.hw	= field length (pre dot)
@@ -505,16 +506,16 @@ VSNPRINTF=1
 ; A2	= argument array
 ; A3	= trash
 ; A4	= temporary buffer for converted numbers
-; (a7)	= 24 byte temporary string buffer
+; (a7)	= 32 byte temporary string buffer
 
 _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		move.l	d0,d7			;remaining buffer length
 		moveq	#0,d6			;count chars
-		sub.w	#24,a7			;temporary buffer for converted numbers
+		sub.w	#32,a7			;temporary buffer for converted numbers
 		bra	.mainloop
 
 .putcharlast	bsr	.putc
-		add.w	#24,a7
+		add.w	#32,a7
 		move.l	d6,d0
 		movem.l	(sp)+,_MOVEMREGS
 		rts
@@ -545,7 +546,11 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		bne.b	.no_minus
 		bset	#0,d3			;bit0 = minus
 		addq.l	#1,a1
-.no_minus	cmpi.b	#'0',(a1)
+.no_minus	cmpi.b	#"'",(a1)
+		bne.b	.no_group
+		bset	#5,d3			;bit5 = thousands grouping
+		addq.l	#1,a1
+.no_group	cmpi.b	#'0',(a1)
 		bne.b	.no_null
 		bset	#1,d3			;bit1 = null
 .no_null	bsr	.getnumber
@@ -566,56 +571,43 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		addq.l	#1,a1
 	; check for type
 .no_l		move.b	(a1)+,d0
-	; signed decimal
-		cmpi.b	#'d',d0
+		cmpi.b	#'d',d0			; signed decimal
 		beq	.putints
-		cmpi.b	#'D',d0
-		beq	.putints
-	; hexadecimal
-		cmpi.b	#'x',d0
+		cmpi.b	#'x',d0			; hexadecimal
 		beq	.putintx
-		cmpi.b	#'X',d0
-		beq	.putintx
-	; string
-		cmpi.b	#'s',d0
+		cmpi.b	#'s',d0			; string
 		beq	.puts
-	; BPTR, BCPL pointer
-		cmpi.b	#'B',d0
+		cmpi.b	#'B',d0			; BPTR, BCPL pointer
 		beq	.putbptr
-	; BSTR, BCPL string
-		cmpi.b	#'b',d0
+		cmpi.b	#'b',d0			; BSTR, BCPL string
 		beq	.putbstr
-	; unsigned decimal
-		cmpi.b	#'u',d0
+		cmpi.b	#'u',d0			; unsigned decimal
 		beq	.putintu
-		cmpi.b	#'U',d0
-		beq	.putintu
-	; character
-.notu		cmpi.b	#'c',d0
+		cmpi.b	#'c',d0			; character
 		bne	.mainloop_putc
-		bsr	.getarg_d4	;word or long
+		bsr	.getarg_d4		;word or long
 		move.b	d4,(a4)+
 	; terminate & copy temporary buffer to output
-.putbuffer	clr.b	(a4)		;terminate string
-		move.l	a7,a4		;rewind
+.putbuffer	clr.b	(a4)			;terminate string
+		move.l	a7,a4			;rewind
 	; copy a4 buffer to output
 .putbuffera4	movea.l	a4,a3
 		moveq	#-1,d2
 .lenbufloop	tst.b	(a3)+
 		dbeq	d2,.lenbufloop
-		not.l	d2		;d2 = buffer length
-.putbufferd2	tst.w	d5		;precision (post dot)
+		not.l	d2			;d2 = buffer length
+.putbufferd2	tst.w	d5			;precision (post dot)
 		beq.b	.noprec
 		cmp.w	d5,d2
 		bhi.b	.setprelen
-.noprec		move.w	d2,d5		;precision = buffer length
+.noprec		move.w	d2,d5			;precision = buffer length
 .setprelen	move.l	d5,d0
-		swap	d5		;field width
-		sub.w	d0,d5		;d5 = field width - precision = align length
+		swap	d5			;field width
+		sub.w	d0,d5			;d5 = field width - precision = align length
 		bpl.b	.prelenok
 		clr.w	d5
 .prelenok	swap	d5
-		btst	#0,d3		;flag minus? (left align)
+		btst	#0,d3			;flag minus? (left align)
 		bne.b	.putbuffer_cin
 		bsr.b	.align
 		bra.b	.putbuffer_cin
@@ -623,7 +615,7 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 .putbuffer_copy	move.b	(a4)+,d0
 		bsr	.putc
 .putbuffer_cin	dbf	d5,.putbuffer_copy
-		btst	#0,d3		;flag minus? (left align)
+		btst	#0,d3			;flag minus? (left align)
 		beq	.mainloop
 		bsr.b	.align
 		bra	.mainloop
@@ -631,11 +623,11 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 .align		move.l	d5,d1
 		swap	d1
 		moveq	#' ',d2
-		btst	#1,d3		;flag 0?
+		btst	#1,d3			;flag 0?
 		beq.b	.align_copyin
 		cmpi.b	#'-',(a4)
 		bne.b	.align_not_neg
-		move.b	(a4)+,d0	;'-'
+		move.b	(a4)+,d0		;'-'
 		subq.w	#1,d5
 		bsr	.putc
 .align_not_neg	moveq	#'0',d2
@@ -654,13 +646,13 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		bcs.b	.getnumber_end
 		cmpi.b	#'9',d2
 		bhi.b	.getnumber_end
-		add.l	d0,d0		;d0 = d0 * 10
+		add.l	d0,d0			;d0 = d0 * 10
 		move.l	d0,d1
 		add.l	d0,d0
 		add.l	d0,d0
 		add.l	d1,d0
 		sub.b	#'0',d2
-		add.l	d2,d0		;add
+		add.l	d2,d0			;add
 		bra.b	.getnumber_loop
 
 .getnumber_end	subq.l	#1,a1
@@ -739,6 +731,27 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 
 .putint_end	add.b	#'0',d4
 		move.b	d4,(a4)+
+		btst	#5,d3			;thousands grouping?
+		beq	.putbuffer
+	; insert thousands separators (commas) into temp buffer
+		move.l	a4,d1
+		sub.l	a7,d1			;d1 = digit count
+		cmpi.b	#'-',(a7)
+		bne.b	.t_count
+		subq.l	#1,d1			;skip sign
+.t_count	subq.l	#1,d1
+		divu	#3,d1			;d1.w = (count-1)/3 = num separators
+		beq	.putbuffer		;no grouping needed
+		movea.l	a4,a3			;a3 = old end (source)
+		add.w	d1,a4			;a4 = new end
+		move.l	a4,d2			;save new end
+.t_loop		move.b	-(a3),-(a4)
+		move.b	-(a3),-(a4)
+		move.b	-(a3),-(a4)
+		move.b	#',',-(a4)
+		subq.w	#1,d1
+		bne.b	.t_loop
+		movea.l	d2,a4			;restore a4 to new end
 		bra	.putbuffer
 
 	; signed decimal 64-bit d4:d0

@@ -93,6 +93,31 @@ BUFSIZE = 256
 	lea	(.args15,pc),a2
 	bsr	.dotest
 
+	;--- %'ld grouping ---
+	lea	(.f16,pc),a1
+	lea	(.args16,pc),a2
+	bsr	.dotest
+
+	;--- %'ld small (no grouping) ---
+	lea	(.f17,pc),a1
+	lea	(.args17,pc),a2
+	bsr	.dotest
+
+	;--- %'ld negative ---
+	lea	(.f18,pc),a1
+	lea	(.args18,pc),a2
+	bsr	.dotest
+
+	;--- %'lld grouping ---
+	lea	(.f19,pc),a1
+	lea	(.args19,pc),a2
+	bsr	.dotest
+
+	;--- %'llu max uint64 ---
+	lea	(.f20,pc),a1
+	lea	(.args20,pc),a2
+	bsr	.dotest
+
 	add.w	#BUFSIZE,sp
 
 .close	move.l	(4).w,a6
@@ -193,6 +218,31 @@ BUFSIZE = 256
 	EVEN
 .args15	dc.l	$000000E8,$D4A51000	;1000000000000
 	dc.l	$000000E8,$D4A51000	;1000000000000
+
+	;--- Test 16: %'ld thousands grouping ---
+.f16	dc.b	"%%'ld:   %'ld expect 1,000,000",10,0
+	EVEN
+.args16	dc.l	1000000
+
+	;--- Test 17: %'ld small number (no grouping) ---
+.f17	dc.b	"%%'ld s: %'ld expect 42",10,0
+	EVEN
+.args17	dc.l	42
+
+	;--- Test 18: %'ld negative ---
+.f18	dc.b	"%%'ld-:  %'ld expect -1,000,000",10,0
+	EVEN
+.args18	dc.l	-1000000
+
+	;--- Test 19: %'lld thousands grouping ---
+.f19	dc.b	"%%'lld:  %'lld expect 1,000,000,000,000",10,0
+	EVEN
+.args19	dc.l	$000000E8,$D4A51000
+
+	;--- Test 20: %'llu max uint64 ---
+.f20	dc.b	"%%'llu:  %'llu expect 18,446,744,073,709,551,615",10,0
+	EVEN
+.args20	dc.l	$FFFFFFFF,$FFFFFFFF
 
 ;----------------------------------------
 ; include the VSNPrintF implementation
