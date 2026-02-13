@@ -27,6 +27,9 @@
 ;			 now single sector reads after error can be performed on all
 ;			 devices (not only trackdisk) but not on skipped tracks
 ;		2025-02-26 imported to wtools
+;		2026-02-13 add thousands separator
+;			   fix reading harddisk partitions
+;			   output disksize as 64-bit
 ;  :Requires.	OS V37+
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V2.16
@@ -76,16 +79,7 @@ GL	EQUR	A4		;a4 ptr to Globals
 LOC	EQUR	A5		;a5 for local vars
 
 Version	 = 1
-Revision = 4
-
-	IFD BARFLY
-	PURE
-	OUTPUT	C:DIC
-	BOPT	O+				;enable optimizing
-	BOPT	OG+				;enable optimizing
-	BOPT	ODd-				;disable mul optimizing
-	BOPT	ODe-				;disable mul optimizing
-	ENDC
+Revision = 5
 
 VER	MACRO
 		db	"DIC ","0"+Version,".","0"+Revision," "
@@ -361,7 +355,7 @@ NAMEBUFLEN = 16
 
 	;save disk image
 		lea	(_filefmt),a0		;fmt
-		move.l	d7,-(a7)
+		move.l	d7,-(a7)		;disknumber
 		move.l	a7,a1			;args
 		sub.l	#NAMEBUFLEN,a7
 		move.l	a7,a2			;buffer
@@ -464,12 +458,20 @@ _LoadDisk	movem.l	d2-d7/a6,-(a7)
 
 		move.l	d3,d0
 		move.l	d4,d1
+		cmp	#39,(LIB_VERSION,a6)
+		bhs	.64
 		jsr	(_LVOUMult32,a6)
-		move.l	d0,d6				;D6 = disksize
-
+		moveq	#0,d5				;D5 = disksize.h
+		move.l	d0,d6				;D6 = disksize.l
+		bra	.32
+.64		jsr	(_LVOUMult64,a6)
+		move.l	d1,d5				;D5 = disksize.h
+		move.l	d0,d6				;D6 = disksize.l
+.32
 	;print geometry
 		lea	(_m_diskgeo),a0
 		move.l	d6,-(a7)
+		move.l	d5,-(a7)
 		move.l	(ld_di+devi_HighCyl,LOC),-(a7)
 		move.l	(ld_di+devi_LowCyl,LOC),-(a7)
 		move.l	(ld_di+devi_BlocksPerTrack,LOC),-(a7)
@@ -477,8 +479,13 @@ _LoadDisk	movem.l	d2-d7/a6,-(a7)
 		move.l	(ld_di+devi_SizeBlock,LOC),-(a7)
 		move.l	a7,a1
 		bsr	_PrintArgs
-		add.w	#6*4,a7
+		add	#7*4,a7
 
+	;if size is > 32-bit make it MAXINT to let AllocVec fail
+		tst.l	d5
+		beq	.no64
+		moveq	#-1,d6
+.no64
 	;calculate readlen / tracks
 		tst.l	(gl_rd_size,GL)
 		beq	.sok
@@ -541,6 +548,7 @@ _LoadDisk	movem.l	d2-d7/a6,-(a7)
 		NULONG	lrd_unit
 		NAPTR	lrd_buffer
 		NAPTR	lrd_msgport
+		NULONG	lrd_diskoffset			;offset on disk, <>0 only on harddisks
 		NBYTE	lrd_skipall
 		NBYTE	lrd_fatal
 		NBYTE	lrd_trysec
@@ -555,6 +563,15 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		sf	(lrd_skipall,LOC)
 		sf	(lrd_trysec,LOC)
 		moveq	#0,d7				;D7 = return (false)
+
+	;calculate start offset on disk
+	;on harddisks this is different to zero
+	;only works if it fits in 32-bit
+		move.l	d2,d0				;start track
+		move.l	d4,d1				;bytes per track
+		move.l	(gl_utilbase,GL),a0
+		jsr	(_LVOUMult32,a0)
+		move.l	d0,(lrd_diskoffset,LOC)
 
 		move.l	(gl_execbase,GL),a6		;A6 = execbase
 		jsr	(_LVOCreateMsgPort,a6)
@@ -628,12 +645,13 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		clr.b	(IO_ERROR,a2)
 		move.w	#ETD_READ,(IO_COMMAND,a2)
 		move.l	d4,(IO_LENGTH,a2)		;bytes per track
-		move.l	d2,d0
+		move.l	d2,d0				;actual track
 		move.l	d4,d1
 		move.l	(gl_utilbase,GL),a0
 		jsr	(_LVOUMult32,a0)
 		move.l	d0,(IO_OFFSET,a2)		;begin at disk (offset)
 		add.l	(lrd_buffer,LOC),d0
+		sub.l	(lrd_diskoffset,LOC),d0
 		move.l	d0,(IO_DATA,a2)			;dest buf
 		move.l	a2,a1
 		move.l	(gl_execbase,GL),a6
@@ -764,6 +782,7 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 	ENDC
 
 		add.l	(lrd_buffer,LOC),d0
+		sub.l	(lrd_diskoffset,LOC),d0
 		move.l	d0,(IO_DATA,a2)			;dest buf
 		move.l	a2,a1
 		move.l	(gl_execbase,GL),a6
@@ -812,6 +831,7 @@ _ReadDisk	movem.l	d2-d3/d5/d7/a2/a6,-(a7)
 		move.l	(gl_utilbase,GL),a0
 		jsr	(_LVOUMult32,a0)
 		add.l	(lrd_buffer,LOC),d0
+		sub.l	(lrd_diskoffset,LOC),d0
 		move.l	d0,a0
 		move.l	d4,d0
 		lsr.l	#2,d0
@@ -862,11 +882,11 @@ _txt_badtracks	dc.b	"Invalid SKIPTRACK/K specification",10,0
 
 ;Messages
 _m_readdisk	dc.b	"read from ",155,"1m%s",155,"22m: (%s %ld)",10,0
-_m_diskgeo	dc.b	"(blksize=%ld heads=%ld blktrk=%ld lcyl=%ld hcyl=%ld) size=%ld",10,0
+_m_diskgeo	dc.b	"(blksize=%ld heads=%ld blktrk=%ld lcyl=%ld hcyl=%ld) size=%'lld",10,0
 _m_savedisk	dc.b	"save disk as ",155,"3m%s ",155,"23m",10,0
 _m_savefile	dc.b	"save file ",155,"3m%s ",155,"23m",10,0
-_diskprogress	dc.b	11,155,"Kreading track %ld left %ld",10,0
-_withsize	dc.b	"limited reading of $%lx=%ld bytes",10,0
+_diskprogress	dc.b	11,155,"Kreading track %'ld left %'ld",10,0
+_withsize	dc.b	"limited reading of $%lx=%'ld bytes",10,0
 _lineback	dc.b	11,155,"K",0
 
 ; Errors
