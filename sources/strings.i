@@ -24,6 +24,7 @@ STRINGS_I = 1
 ;		13.11.23 _StrCaseCmp added
 ;		11.02.26 _VSNPrintF add specifier %ll for 64-bit ints
 ;		12.02.26 _VSNPrintF add thousands grouping flag '
+;		13.02.26 _FormatString using _VSNPrintF
 ;  :Copyright.	All rights reserved.
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly 2.9
@@ -56,27 +57,15 @@ STRINGS_I = 1
 FormatString	MACRO
 	IFND	FORMATSTRING
 FORMATSTRING=1
-		IFND	_LVORawDoFmt
-			INCLUDE lvo/exec.i
-		ENDC
-_FormatString	movem.l	a2-a3/a6,-(a7)
-		lea	(.bufend),a3
-		add.l	a2,d0
-		move.l	d0,(a3)
-		move.l	a2,a3
-		lea	(.PutChar),a2
-		move.l	(gl_execbase,GL),a6
-		jsr	(_LVORawDoFmt,a6)
-		movem.l	(a7)+,a2-a3/a6
+	IFND	VSNPRINTF
+		VSNPrintF
+	ENDC
+_FormatString	move.l	a2,-(a7)
+		exg.l	a0,a1
+		exg.l	a0,a2
+		bsr	_VSNPrintF
+		move.l	(a7)+,a2
 		rts
-
-.PutChar	move.b	d0,(a3)+
-		cmp.l	(.bufend),a3
-		bne	.PC_ok
-		subq.l	#1,a3
-.PC_ok		rts	
-
-.bufend		dc.l	0
 	ENDC
 		ENDM
 
