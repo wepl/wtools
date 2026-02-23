@@ -118,6 +118,56 @@ BUFSIZE = 256
 	lea	(.args20,pc),a2
 	bsr	.dotest
 
+	;--- buffer truncation tests ---
+
+	;--- buf=6: "Hello" exact fit ---
+	lea	(.fb_hello,pc),a1
+	lea	(.fb_noargs,pc),a2
+	lea	(.exp_hello,pc),a3
+	moveq	#6,d3
+	moveq	#5,d4
+	bsr	.dotest_buf
+
+	;--- buf=4: "Hello" truncated ---
+	lea	(.fb_hello,pc),a1
+	lea	(.fb_noargs,pc),a2
+	lea	(.exp_hel,pc),a3
+	moveq	#4,d3
+	moveq	#5,d4
+	bsr	.dotest_buf
+
+	;--- buf=1: "Hello" only null terminator ---
+	lea	(.fb_hello,pc),a1
+	lea	(.fb_noargs,pc),a2
+	lea	(.exp_empty,pc),a3
+	moveq	#1,d3
+	moveq	#5,d4
+	bsr	.dotest_buf
+
+	;--- buf=0: "Hello" nothing written ---
+	lea	(.fb_hello,pc),a1
+	lea	(.fb_noargs,pc),a2
+	lea	(.exp_empty,pc),a3
+	moveq	#0,d3
+	moveq	#5,d4
+	bsr	.dotest_buf
+
+	;--- buf=5: "%ld" 1000000 truncated ---
+	lea	(.fb_ld,pc),a1
+	lea	(.fb_args_1m,pc),a2
+	lea	(.exp_1000,pc),a3
+	moveq	#5,d3
+	moveq	#7,d4
+	bsr	.dotest_buf
+
+	;--- buf=6: "%'ld" 1000000 grouped truncated ---
+	lea	(.fb_gld,pc),a1
+	lea	(.fb_args_1m,pc),a2
+	lea	(.exp_g1000,pc),a3
+	moveq	#6,d3
+	moveq	#9,d4
+	bsr	.dotest_buf
+
 	add.w	#BUFSIZE,sp
 
 .close	move.l	(4).w,a6
@@ -137,6 +187,44 @@ BUFSIZE = 256
 	; print buffer
 	move.l	a5,a6
 	move.l	a4,d1
+	jsr	(_LVOPutStr,a6)
+	rts
+
+;----------------------------------------
+; format into limited buffer and print result with expected values
+; IN: d3=bufsize, d4=expected d0, a1=fmt, a2=args, a3=expected string
+;     a4=buffer, a5=dosbase
+
+.dotest_buf
+	; clear first 32 bytes of buffer
+	moveq	#7,d0
+	move.l	a4,a0
+.clrbuf	clr.l	(a0)+
+	dbf	d0,.clrbuf
+
+	; call _VSNPrintF with limited buffer
+	move.l	a4,a0
+	move.l	d3,d0
+	bsr	_VSNPrintF
+	move.l	d0,d2			;d2 = returned d0
+
+	; format result: "buf=N:  [content] d0=M expect [exp] d0=E"
+	move.l	d4,-(sp)		;arg5: expected d0
+	pea	(a3)			;arg4: expected string
+	move.l	d2,-(sp)		;arg3: actual d0
+	pea	(a4)			;arg2: buffer content
+	move.l	d3,-(sp)		;arg1: bufsize
+	lea	(.fb_result,pc),a1
+	move.l	sp,a2
+	lea	(32,a4),a0
+	move.l	#BUFSIZE-32,d0
+	bsr	_VSNPrintF
+	lea	(20,sp),sp
+
+	; print result
+	move.l	a5,a6
+	lea	(32,a4),a0
+	move.l	a0,d1
 	jsr	(_LVOPutStr,a6)
 	rts
 
@@ -243,6 +331,20 @@ BUFSIZE = 256
 .f20	dc.b	"%%'llu:  %'llu expect 18,446,744,073,709,551,615",10,0
 	EVEN
 .args20	dc.l	$FFFFFFFF,$FFFFFFFF
+
+	;--- buffer truncation test data ---
+.fb_result	dc.b	"buf=%ld:  [%s] d0=%ld expect [%s] d0=%ld",10,0
+.fb_hello	dc.b	"Hello",0
+.fb_ld		dc.b	"%ld",0
+.fb_gld		dc.b	"%'ld",0
+.exp_hello	dc.b	"Hello",0
+.exp_hel	dc.b	"Hel",0
+.exp_empty	dc.b	0
+.exp_1000	dc.b	"1000",0
+.exp_g1000	dc.b	"1,000",0
+	EVEN
+.fb_noargs	dc.l	0
+.fb_args_1m	dc.l	1000000
 
 ;----------------------------------------
 ; include the VSNPrintF implementation

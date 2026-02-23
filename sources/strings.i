@@ -26,6 +26,7 @@ STRINGS_I = 1
 ;		12.02.26 _VSNPrintF add thousands grouping flag '
 ;		13.02.26 _FormatString using _VSNPrintF
 ;		23.02.26 _VSNPrintF flags moved to upper bits of D3
+;			 _VSNPrintF optimized .putc subroutine
 ;  :Copyright.	All rights reserved.
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly 2.9
@@ -505,24 +506,22 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		bra	.mainloop
 
 .putcharlast	bsr	.putc
+		subq.l	#1,d6			;undo count for null terminator
 		add.w	#32,a7
 		move.l	d6,d0
 		movem.l	(sp)+,_MOVEMREGS
 		rts
 
-.putc_term	clr.b	(a0)
-.putc_count	tst.b	d0
-		beq	.putc_rts
-.putc_inc	addq.l	#1,d6
-.putc_rts	rts
-
-.putc		subq.l	#1,d7
-		bmi	.putc_count
-		beq	.putc_term
+.putc		addq.l	#1,d6			;count chars
+		subq.l	#1,d7			;remaining buffer length
+		ble.b	.putc_bufend
 		move.b	d0,(a0)+
-		bne	.putc_inc
-		subq.l	#1,a0
+		beq.b	.putc_nul
 		rts
+.putc_bufend	bne.b	.putc_rts		;buffer already full
+		clr.b	(a0)+			;write null terminator
+.putc_nul	subq.l	#1,a0
+.putc_rts	rts
 
 .mainloop_putc	bsr	.putc
 .mainloop	move.b	(a1)+,d0
