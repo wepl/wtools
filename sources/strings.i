@@ -25,6 +25,7 @@ STRINGS_I = 1
 ;		11.02.26 _VSNPrintF add specifier %ll for 64-bit ints
 ;		12.02.26 _VSNPrintF add thousands grouping flag '
 ;		13.02.26 _FormatString using _VSNPrintF
+;		23.02.26 _VSNPrintF flags moved to upper bits of D3
 ;  :Copyright.	All rights reserved.
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly 2.9
@@ -484,7 +485,7 @@ VSNPrintF	MACRO
 VSNPRINTF=1
 
 ; D0-D2 = trash
-; D3	= flags 0=minus 1=null 2=long(32-bit) 3=longlong(64-bit) 5=group
+; D3.hw	= flags 31=longlong(64-bit) 30=long(32-bit) 29=minus 28=null 27=group
 ; D4	= argument value (high long on 64-bit)
 ; D5.lw	= precision length (post dot)
 ; D5.hw	= field length (pre dot)
@@ -533,15 +534,15 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		moveq	#0,d3			;d3 = flags
 		cmpi.b	#'-',(a1)
 		bne.b	.no_minus
-		bset	#0,d3			;bit0 = minus
+		bset	#29,d3			;bit29 = minus
 		addq.l	#1,a1
 .no_minus	cmpi.b	#"'",(a1)
 		bne.b	.no_group
-		bset	#5,d3			;bit5 = thousands grouping
+		bset	#27,d3			;bit27 = thousands grouping
 		addq.l	#1,a1
 .no_group	cmpi.b	#'0',(a1)
 		bne.b	.no_null
-		bset	#1,d3			;bit1 = null
+		bset	#28,d3			;bit28 = null
 .no_null	bsr	.getnumber
 		move.l	d0,d5
 		swap	d5			;d5.hw = field width (pre dot)
@@ -552,11 +553,11 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		move.w	d0,d5			;d5.lw = precision (post dot)
 .no_dot		cmpi.b	#'l',(a1)
 		bne.b	.no_l
-		bset	#2,d3			;bit2 = l (32-bit)
+		bset	#30,d3			;bit30 = l (32-bit)
 		addq.l	#1,a1
 		cmpi.b	#'l',(a1)
 		bne.b	.no_l
-		bset	#3,d3			;bit3 = ll (64-bit)
+		bset	#31,d3			;bit31 = ll (64-bit)
 		addq.l	#1,a1
 	; check for type
 .no_l		move.b	(a1)+,d0
@@ -596,7 +597,7 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		bpl.b	.prelenok
 		clr.w	d5
 .prelenok	swap	d5
-		btst	#0,d3			;flag minus? (left align)
+		btst	#29,d3			;flag minus? (left align)
 		bne.b	.putbuffer_cin
 		bsr.b	.align
 		bra.b	.putbuffer_cin
@@ -604,7 +605,7 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 .putbuffer_copy	move.b	(a4)+,d0
 		bsr	.putc
 .putbuffer_cin	dbf	d5,.putbuffer_copy
-		btst	#0,d3			;flag minus? (left align)
+		btst	#29,d3			;flag minus? (left align)
 		beq	.mainloop
 		bsr.b	.align
 		bra	.mainloop
@@ -612,7 +613,7 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 .align		move.l	d5,d1
 		swap	d1
 		moveq	#' ',d2
-		btst	#1,d3			;flag 0?
+		btst	#28,d3			;flag 0?
 		beq.b	.align_copyin
 		cmpi.b	#'-',(a4)
 		bne.b	.align_not_neg
@@ -648,9 +649,9 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		rts
 
 	; get argument to d4 (16/32/64-bit)
-.getarg_d4	btst	#3,d3			;64-bit?
-		bne.b	.getargll_d4
-		btst	#2,d3			;long?
+.getarg_d4	tst.l	d3			;64-bit?
+		bmi.b	.getargll_d4
+		btst	#30,d3			;long?
 		bne.b	.getargl_d4
 		move.w	(a2)+,d4
 		ext.l	d4
@@ -672,7 +673,7 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 	; BPTR, BCPL pointer
 .putbptr	bsr.b	.getargl_d4
 		lsl.l	#2,d4			;BPTR -> APTR
-		bset	#2,d3			;flag l
+		bset	#30,d3			;flag l
 		bra	.putintx_d4		;print as hexadecimal value
 
 	; BSTR, BCPL string
@@ -690,8 +691,8 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 
 	; signed decimal
 .putints	bsr.b	.getarg_d4
-		btst	#3,d3			;64-bit?
-		bne.b	.putints64
+		tst.l	d3			;64-bit?
+		bmi.b	.putints64
 		tst.l	d4
 		bpl.b	.putintu_d4
 		move.b	#'-',(a4)+
@@ -700,8 +701,8 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 
 	; unsigned decimal
 .putintu	bsr.b	.getarg_d4
-		btst	#3,d3			;64-bit?
-		bne.b	.putintu64
+		tst.l	d3			;64-bit?
+		bmi.b	.putintu64
 	; d4 unsigned decimal
 .putintu_d4	moveq	#'0',d0
 		lea	(.dectab,pc),a3
@@ -720,7 +721,7 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 
 .putint_end	add.b	#'0',d4
 		move.b	d4,(a4)+
-		btst	#5,d3			;thousands grouping?
+		btst	#27,d3			;thousands grouping?
 		beq	.putbuffer
 	; insert thousands separators (commas) into temp buffer
 		move.l	a4,d1
@@ -765,14 +766,14 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 		addx.l	d0,d4			;add back high
 		cmpi.b	#'0',d2			;leading zero?
 		bne.b	.putint64_nz
-		btst	#4,d3			;any digit written?
+		btst	#26,d3			;any digit written?
 		beq.b	.putint64_loop		;no -> skip
-.putint64_nz	bset	#4,d3			;mark digit written
+.putint64_nz	bset	#26,d3			;mark digit written
 		move.b	d2,(a4)+
 		bra.b	.putint64_loop
 	;64-bit table end reached
 .putint64_to32	move.l	d5,d4			;remaining value (< 10^9)
-		bclr	#4,d3			;test+clear "digit written"
+		bclr	#26,d3			;test+clear "digit written"
 		seq	d0			;d0=$FF if no digits, 0 if digits
 		and.b	#'0',d0			;d0='0' suppress, 0 no suppress
 		move.l	(sp)+,d5		;restore d5
@@ -781,13 +782,13 @@ _VSNPrintF	movem.l	d2-d7/a2-a4,-(sp)
 
 	; hexadecimal
 .putintx	bsr.b	.getarg_d4
-		btst	#3,d3			;64-bit?
-		bne.b	.putintx64
+		tst.l	d3			;64-bit?
+		bmi.b	.putintx64
 	; d4 hexadecimal
 .putintx_d4	tst.l	d4
 		beq.b	.putint_end		;only write "0"
 		sf	d1			;d1 = flag already one char written
-		btst	#2,d3			;flag l
+		btst	#30,d3			;flag l
 		bne.b	.putintx_l
 		moveq	#3,d2			;4 nibbles
 		swap	d4
