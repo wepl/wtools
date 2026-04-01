@@ -28,6 +28,7 @@
  * 2021-07-14 lha working without XPK files
  * 2021-10-31 XPK decompression added
  * 2024-12-22 final for xmas 2024
+ * 2026-04-01 icon.library minimum version reduced from 44 to 37
  *
  */
 
@@ -874,7 +875,7 @@ int processIcon(const STRPTR path, const STRPTR iconname, struct MinList *list) 
 	// open icon.library
 	if (!IconBase) {
 		const char *iconlibname = "icon.library";
-		const int iconlibver = 44;
+		const int iconlibver = 37;
 		IconBase = OpenLibrary (iconlibname, iconlibver);
 		if (!IconBase) {
 			error("cannot open %s version %d", iconlibname, iconlibver);
