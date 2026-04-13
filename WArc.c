@@ -50,7 +50,7 @@
 #define MAXPATHNAMELEN 256	// dos.library doesn't support more
 
 static const char min_stack[] = "$STACK:20480";
-static const char version[] = "$VER: WArc 1.0 " DATE;
+static const char version[] = "$VER: WArc 1.1 " DATE;
 
 #define TEMPLATE "Src,Scan/S,UnArc/S,NoDelete/S,TmpDir/K,Verbose/S"
 #define OPT_SRC		0
