@@ -7,7 +7,8 @@
 ;		03.01.10 included label added
 ;		18.10.12 ID_COLS added
 ;		16.07.23 ID_OPT added
-;  :Copyright.	© 1998-2010,2012,2023 Bert Jahn, All Rights Reserved
+;		11.10.26 CUSTB_COPCHK added
+;  :Copyright.	© 1998-2010,2012,2023,2026 Bert Jahn, All Rights Reserved
 ;  :Language.	68000 Assembler
 ;  :Translator.	Barfly V2.9
 ;---------------------------------------------------------------------------*
@@ -112,6 +113,7 @@ ID_CUST	= 'CUST'
 
  BITDEF CUST,READ,0	;readable
  BITDEF CUST,WRITE,1	;writeable
+ BITDEF CUST,COPCHK,4	;needs a special check in the copperlist scanner
  BITDEF CUST,MODI,7	;modified
 
 
